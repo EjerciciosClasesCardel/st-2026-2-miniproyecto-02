@@ -1,0 +1,2 @@
+modelo,RMSE,MAE,MAPE,parametros,segundos
+estacional ingenuo,53.33,51.46,11.47,0,0.0
