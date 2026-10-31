@@ -39,8 +39,8 @@ entrega pierde el 20 %; quien no aparezca aquí no cuenta como parte del grupo.
 
 | Qué | Fecha y hora |
 |---|---|
-| Cierre de la entrega | sábado 28 de noviembre de 2026, 7:59 a. m. |
-| Sustentación | sábado 28 de noviembre de 2026, 8:00 a. m., virtual |
+| Cierre de la entrega | viernes 27 de noviembre de 2026, 6:29 p. m. |
+| Sustentación | viernes 27 (después del quiz 2) y sábado 28 (8:00 a. m.) de noviembre de 2026, virtual |
 
 ## Cómo se entrega
 
