@@ -24,10 +24,10 @@ como fila de referencia.
 
 ## Integrantes
 
-Los grupos son de 3 integrantes.
+Los grupos son de hasta 3 integrantes; también se puede trabajar de forma individual.
 
-Esta tabla identifica al grupo. Sin ella, o con algún dato incompleto, la
-entrega pierde el 20 %; quien no aparezca aquí no cuenta como parte del grupo.
+Esta tabla identifica al grupo: quien no aparezca aquí no cuenta como parte
+del grupo. Si falta algún dato, se advierte en la realimentación.
 
 | Nombre completo | Código | Correo institucional |
 |---|---|---|
@@ -45,7 +45,7 @@ entrega pierde el 20 %; quien no aparezca aquí no cuenta como parte del grupo.
 ## Cómo se entrega
 
 1. **Se trabaja sobre un fork de este repositorio.** El grupo hace el fork,
-   lo deja público, agrega a los otros dos integrantes como colaboradores y
+   lo deja público, agrega a los demás integrantes como colaboradores y
    cada uno trabaja con su propia cuenta, en ramas. Una entrega que no sea
    fork de este repositorio pierde el 30 % de la nota.
 2. **Un solo integrante pega el enlace del fork en la tarea *Miniproyecto 2*
@@ -59,9 +59,8 @@ entrega pierde el 20 %; quien no aparezca aquí no cuenta como parte del grupo.
    LaTeX y las figuras que genera el guion en `figuras/`. No se aceptan PDF,
    DOCX, presentaciones ni el informe como enlace a otro sitio: lo que no
    está en `docs/informe.md` no se califica.
-5. El historial de commits se revisa para ver el aporte de cada integrante,
-   y ese aporte es un factor de la nota. Los cambios de puro formato o de
-   comentarios no cuentan.
+5. Cada integrante trabaja con su propia cuenta para que el historial de
+   commits muestre el trabajo del grupo.
 
 ## Cómo está organizado
 
