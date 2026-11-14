@@ -97,7 +97,7 @@ Con el entorno `series` del curso activo, PyTorch para CPU se instala
 primero, para que `pip` no baje la versión con CUDA, que pesa unos 2,5 GB:
 
 ```bash
-pip install torch --index-url https://download.pytorch.org/whl/cpu
+pip install torch==2.3.0 --index-url https://download.pytorch.org/whl/cpu
 pip install -r requirements.txt
 python miniproyecto.py
 ```
