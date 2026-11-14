@@ -1,0 +1,5 @@
+red,parametros,epocas,perdida entrenamiento,perdida validacion,validacion en 300,RMSE validacion
+MLP (8 ocultas),177,92,0.145,1.063,1.6785,17610.5219
+MLP (32 ocultas),705,13,0.3535,1.5364,2.1878,21171.4894
+LSTM (16 ocultas),1233,6,0.9299,2.8715,4.2259,28943.5062
+Conv1D (8 filtros de 3),113,175,0.2791,1.9341,2.3542,23753.987
