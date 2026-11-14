@@ -31,9 +31,9 @@ del grupo. Si falta algún dato, se advierte en la realimentación.
 
 | Nombre completo | Código | Correo institucional |
 |---|---|---|
-| | | |
-| | | |
-| | | |
+| Osvaldo Emilio Marín Mora | 94266189 | osvaldo_emi.marin@uao.edu.co |
+
+Trabajo individual.
 
 ## Entrega
 

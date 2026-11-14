@@ -1,23 +1,19 @@
 # datos
 
-La serie del grupo va en esta carpeta, en CSV: la misma del miniproyecto 1.
-Copie aquí la ficha que llenó entonces y borre la serie de ejemplo cuando ya
-no la use.
-
 | Campo | Valor |
 |---|---|
-| Archivo | {{nombre del CSV}} |
-| Qué mide | {{...}} |
-| Fuente | {{institución o conjunto de datos, con enlace}} |
-| Licencia | {{...}} |
+| Archivo | `sacrificio_porcino.csv` |
+| Qué mide | Cabezas de ganado porcino sacrificadas por mes en Colombia, total nacional. El archivo trae también los machos, las hembras y los vacunos sacrificados, que el guion no usa. |
+| Fuente | DANE, Encuesta de Sacrificio de Ganado (ESAG), series históricas, cuadro 3 (`series-hist-ESAG-IItrim2026.xls`, actualizado el 10 de agosto de 2026): <https://www.dane.gov.co/index.php/estadisticas-por-tema/agropecuario/encuesta-de-sacrificio-de-ganado> |
+| Licencia | Información pública del DANE. Los términos de uso del DANE permiten usarla y reproducirla citando la fuente (Ley 1712 de 2014, de transparencia y acceso a la información pública). |
 | Frecuencia | mensual |
-| Periodo | {{primer mes}} a {{último mes}} ({{n}} observaciones) |
-| Columna de fecha | {{...}} |
-| Columna que se pronostica | {{...}} |
+| Periodo | 2008-10 a 2026-06 (213 observaciones; los meses de 2026 son preliminares) |
+| Columna de fecha | `mes` (formato `AAAA-MM`) |
+| Columna que se pronostica | `porcinos` |
 
-## Serie de ejemplo
+La serie no tiene meses vacíos. Lo que se decidió con sus datos atípicos
+está en `docs/informe.md`, sección 1.
 
-`air_passengers.csv`: pasajeros mensuales de una aerolínea entre 1949 y 1960,
-la serie clásica de Box y Jenkins, tomada de Kaggle
-(`rakannimer/air-passengers`). Solo sirve para comprobar que el guion corre;
-el miniproyecto se hace con la serie del grupo.
+Es la misma serie y el mismo archivo del miniproyecto 1. La serie de ejemplo
+del repositorio base (`air_passengers.csv`) se borró porque el guion ya no la
+usa.
