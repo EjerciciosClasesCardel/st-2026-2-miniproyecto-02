@@ -137,7 +137,14 @@ def graficar_serie(serie):
 # ============================================================
 # Lo que aprende cada modelo: "nivel" es la serie tal cual; "dif12" es la
 # diferencia con el mismo mes del año anterior.
-OBJETIVO = "nivel"     # TODO: elija "nivel" o "dif12" y justifíquelo
+# Se eligió "nivel". Con los cuatro modelos por defecto en el backtest, el
+# nivel gana por RMSE en tres de cuatro (Random Forest 135.0 frente a 161.4,
+# XGBoost 134.1 frente a 164.3, KNN 145.2 frente a 169.0); solo SVR mejora con
+# dif12 (152.0 frente a 163.3), porque con la diferencia casi repite el año
+# anterior. La diferencia anual de la lluvia es casi ruido (su única memoria
+# clara es el rezago 12, que ya trae la tabla), y con el nivel la tabla tiene
+# 98 filas antes del backtest en lugar de 86.
+OBJETIVO = "nivel"
 REZAGOS = 12
 
 
@@ -150,23 +157,42 @@ def a_nivel(y, z):
     return y.iloc[-PERIODO] + z if OBJETIVO == "dif12" else z
 
 
-def tabla_supervisada(z):
-    """TODO: una fila por mes con los rezagos 1 a REZAGOS, al menos el mes del
-    año y al menos una estadística de ventana móvil.
+VENTANA = 3
 
-    Ninguna columna de la fila t puede usar z(t): los rezagos con shift(k) y
-    las ventanas sobre la serie ya corrida un mes.
+
+def tabla_supervisada(z):
+    """Una fila por mes: los rezagos 1 a REZAGOS, el mes del año y la media
+    móvil de los VENTANA meses anteriores.
+
+    Ninguna columna de la fila t usa z(t): shift(k) trae el valor de hace k
+    meses y la media móvil se calcula sobre la serie ya corrida un mes.
     """
-    raise NotImplementedError("tabla supervisada")
+    X = pd.DataFrame({f"rezago_{k}": z.shift(k) for k in range(1, REZAGOS + 1)},
+                     index=z.index)
+    X["mes"] = z.index.month
+    X[f"media_{VENTANA}"] = z.shift(1).rolling(VENTANA).mean()
+    return X
 
 
 def comprobar_sin_fuga(serie):
-    """TODO: pruebe en el código que ninguna fila ve el mes que predice.
+    """Prueba en el código que ninguna fila ve el mes que predice.
 
-    Por ejemplo, cambie el valor de cada mes y verifique que su fila de la
-    tabla no cambie. Si una fila cambia, lance AssertionError.
+    Para cada mes t, cambia y(t) por un valor absurdo y vuelve a armar la
+    tabla: la fila t (lo que el modelo ve para pronosticar t) tiene que quedar
+    igual. Si cambia, hay fuga y se lanza AssertionError.
     """
-    raise NotImplementedError("prueba de que no hay fuga")
+    y = serie.copy()
+    base = tabla_supervisada(objetivo(y))
+    for mes in y.index:
+        alterada = y.copy()
+        alterada[mes] = alterada[mes] + 10_000
+        fila = tabla_supervisada(objetivo(alterada)).loc[mes]
+        if not fila.equals(base.loc[mes]):
+            cambiadas = list(fila.index[(fila != base.loc[mes]) & fila.notna()])
+            raise AssertionError(f"fuga: la fila de {mes:%Y-%m} cambia con su propio valor "
+                                 f"(columnas {cambiadas})")
+    print(f"  sin fuga: en los {len(y)} meses, cambiar y(t) no cambia la fila de t "
+          f"({base.shape[1]} columnas: {', '.join(base.columns[[0, REZAGOS - 1, -2, -1]])}, ...)")
 
 
 def filas_completas(y):
@@ -177,14 +203,20 @@ def filas_completas(y):
 
 
 def recursivo(ajustado, y, h):
-    """TODO: pronóstico recursivo a h meses.
+    """Pronóstico recursivo a h meses.
 
-    Agregue el mes siguiente a y como NaN, arme la última fila de la tabla,
-    pronostique con ajustado.predict, devuelva el pronóstico al nivel con
-    a_nivel y escríbalo como si fuera dato antes de pasar al mes siguiente.
-    Devuelva los h pronósticos.
+    Agrega el mes siguiente como NaN, arma su fila con la tabla (que solo mira
+    meses anteriores), pronostica el objetivo, lo devuelve al nivel con a_nivel
+    y lo escribe como si fuera dato antes de pasar al mes siguiente. Así, desde
+    el segundo mes, los rezagos más recientes son pronósticos, no datos.
     """
-    raise NotImplementedError("pronóstico recursivo")
+    y = y.copy()
+    for _ in range(h):
+        y.loc[y.index[-1] + pd.offsets.MonthBegin(1)] = np.nan
+        fila = tabla_supervisada(objetivo(y)).iloc[[-1]]
+        z_hat = float(np.asarray(ajustado.predict(fila)).ravel()[0])
+        y.iloc[-1] = a_nivel(y.iloc[:-1], z_hat)
+    return y.iloc[-h:].to_numpy()
 
 
 def con_tabla(fabrica):

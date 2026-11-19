@@ -52,16 +52,57 @@ se vuelve sobre la pregunta con todos los modelos.
 
 ## 2. La tabla supervisada
 
-{{Las columnas de la tabla: qué rezagos, qué variables de fecha y qué
-estadísticas de ventana móvil, con la fórmula de cada una. Qué aprenden los
-modelos (`OBJETIVO`: la serie o su diferencia con el mismo mes del año
-anterior) y por qué.}}
+Cada mes $t$ es una fila con 14 columnas, todas calculadas con meses
+anteriores a $t$:
 
-{{Cómo prueba el guion que ninguna fila ve el mes que predice, y qué
-imprime.}}
+| Columna | Fórmula | Qué aporta |
+|---|---|---|
+| `rezago_1` … `rezago_12` | $z_{t-k}$, $k = 1, \dots, 12$ | la lluvia de los doce meses anteriores; `rezago_12` es el mismo mes del año pasado |
+| `mes` | el número del mes de $t$ (1 a 12) | la temporada: se conoce de antemano por el calendario |
+| `media_3` | $\frac{1}{3}(z_{t-1} + z_{t-2} + z_{t-3})$ | si el trimestre reciente viene húmedo o seco |
 
-{{Cómo funciona el pronóstico recursivo a 12 meses y dónde se ajusta el
-escalador dentro de cada origen del *backtest*.}}
+**Qué aprenden los modelos: el nivel**, es decir, la lluvia del mes tal cual
+($z_t = y_t$), no su diferencia con el mismo mes del año anterior. Se
+decidió con los cuatro modelos en sus valores por defecto, en el mismo
+*backtest*:
+
+| Modelo | RMSE con el nivel | RMSE con la diferencia |
+|---|---|---|
+| Random Forest | **135.0** | 161.4 |
+| XGBoost | **134.1** | 164.3 |
+| KNN | **145.2** | 169.0 |
+| SVR | 163.3 | **152.0** |
+
+El nivel gana en tres de cuatro. La diferencia anual de la lluvia es casi
+ruido: su única memoria clara es la del rezago 12 (la que captura el SARIMA),
+y esa ya está en la tabla como columna. Con el nivel, además, la tabla tiene
+**98 filas** antes del *backtest* (2016-01 a 2024-02) en lugar de 86, porque
+no se pierde un año en la diferencia. Solo el SVR mejora con la diferencia, y
+es porque así casi repite el año anterior: su RMSE (152.0) queda pegado al del
+estacional ingenuo (154.9).
+
+**La prueba de que no hay fuga.** `comprobar_sin_fuga` toma cada uno de los
+134 meses, le suma 10 000 mm a su lluvia y vuelve a armar la tabla: la fila de
+ese mes, que es lo que el modelo ve para pronosticarlo, tiene que quedar
+idéntica. Si alguna columna cambia, lanza `AssertionError`. El guion imprime:
+
+```
+sin fuga: en los 134 meses, cambiar y(t) no cambia la fila de t (14 columnas: rezago_1, rezago_12, mes, media_3, ...)
+```
+
+La prueba sí detecta la fuga cuando existe: si la media móvil se calcula sin
+el `shift(1)`, falla en la fila de 2015-03 y señala la columna `media_3`.
+
+**El pronóstico recursivo.** Para pronosticar 12 meses desde un origen,
+`recursivo` agrega el mes siguiente sin dato, arma su fila con la tabla,
+pronostica, escribe el pronóstico como si fuera un dato y pasa al mes
+siguiente. Desde el segundo mes, los rezagos más recientes son pronósticos,
+no observaciones, así que los errores se acumulan con el horizonte.
+
+**El escalador** vive dentro de cada modelo (KNN y SVR son `make_pipeline`
+con `StandardScaler`; las redes escalan en `Red.fit`). Como `con_tabla` crea y
+ajusta un modelo nuevo en cada origen con las filas de ese entrenamiento, la
+media y la desviación salen solo de los meses anteriores al origen.
 
 ## 3. Aprendizaje automático
 
