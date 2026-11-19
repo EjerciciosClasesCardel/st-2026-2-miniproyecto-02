@@ -7,14 +7,48 @@ figuras son las que ese guion deja en `figuras/`. Las fórmulas van en LaTeX
 
 ## 1. La serie y el modelo a superar
 
-{{La serie en dos o tres líneas: qué mide, periodo, número de observaciones
-y la decisión sobre huecos y datos atípicos que se trae del miniproyecto 1.}}
+La serie es la **lluvia mensual (mm)** de la estación **CDEA El Topacio**
+(código 2629020601), en la cuenca del río Pance (Cali), suministrada por la
+**CVC** para uso académico. Va de **enero de 2015 a febrero de 2026: 134
+meses**. Se trae la decisión del miniproyecto 1: **no hay huecos** (ningún mes
+quedó por debajo del 80 % de días con dato), y los **7 atípicos** del residuo
+de una STL robusta (2022-02, 2022-05, 2022-06, 2023-03, 2023-10, 2024-04 y
+2025-12) **se conservan**: son lluvia real o meses registrados con totales
+diarios, un posible artefacto de medición que no se puede corregir sin otra
+fuente. `preparar` lo comprueba con `assert` y los imprime.
 
 ![La serie](../figuras/serie.png)
 
-{{El mejor modelo del miniproyecto 1, escrito con su ecuación, y sus
-métricas en este *backtest*. Si no coinciden con las del miniproyecto 1,
-qué cambió y por qué.}}
+El modelo a superar es el mejor del miniproyecto 1, un
+**SARIMAX$(0,0,0)(0,1,1)_{12}$ con el número de días del mes** como exógena,
+ajustado sobre la lluvia dividida por 100:
+
+$$y_t - y_{t-12} = \beta\,(d_t - d_{t-12}) + \varepsilon_t + \Theta\,\varepsilon_{t-12},
+\qquad \Theta = -0.860,\quad \beta = -100.9\ \text{mm por día},$$
+
+con $d_t$ los días del mes $t$ (ajuste con toda la serie). Tiene **3
+parámetros** ($\beta$, $\Theta$ y la varianza). Pronostica cada mes con un
+patrón casi fijo, cercano al promedio de ese mes en los años anteriores. El
+efecto de los días del mes sale de unos pocos febreros bisiestos, con signo
+sin sentido físico y valor p 0.095: probablemente es casualidad, como se
+concluyó en el miniproyecto 1.
+
+| Modelo | RMSE | MAE | MAPE (%) |
+|---|---|---|---|
+| SARIMAX$(0,0,0)(0,1,1)_{12}$ + días del mes | **113.79** | **91.75** | 54.31 |
+| Estacional ingenuo | 154.93 | 112.39 | **43.90** |
+
+Las métricas **coinciden exactamente** con las del miniproyecto 1: mismo
+*backtest* (13 orígenes, de 2024-02 a 2025-02, horizonte 1 a 12), misma
+preparación y misma clase de statsmodels (`ARIMA`).
+
+**El MAPE de 54 %.** En la sustentación del miniproyecto 1 se preguntó cómo
+mejorarlo. Buena parte viene de la métrica: el MAPE divide por la lluvia real,
+y en un mes seco un error pequeño en milímetros es enorme en porcentaje. Los
+meses con menos de 100 mm son el 28 % de los pronósticos y aportan el 59 % del
+MAPE; solo dos meses, **enero de 2025 (53.8 mm) y junio de 2024 (31.4 mm),
+aportan el 50 %**. Por eso este trabajo decide por **RMSE**, y en la sección 5
+se vuelve sobre la pregunta con todos los modelos.
 
 ## 2. La tabla supervisada
 
