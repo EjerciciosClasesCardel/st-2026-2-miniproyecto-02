@@ -1,6 +1,8 @@
 # datos
 
 La serie del grupo va en esta carpeta, en CSV: la misma del miniproyecto 1.
+Copie aquí la ficha que llenó entonces y borre la serie de ejemplo cuando ya
+no la use.
 
 | Campo | Valor |
 |---|---|
@@ -13,3 +15,10 @@ La serie del grupo va en esta carpeta, en CSV: la misma del miniproyecto 1.
 | Periodo | 2015-01 a 2026-02 (134 observaciones) |
 | Columna de fecha | `mes` (formato `AAAA-MM`) |
 | Columna que se pronostica | `valor` (mm/mes) |
+
+## Serie de ejemplo
+
+`air_passengers.csv`: pasajeros mensuales de una aerolínea entre 1949 y 1960,
+la serie clásica de Box y Jenkins, tomada de Kaggle
+(`rakannimer/air-passengers`). Solo sirve para comprobar que el guion corre;
+el miniproyecto se hace con la serie del grupo.

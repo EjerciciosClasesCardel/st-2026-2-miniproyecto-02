@@ -15,22 +15,22 @@ import warnings
 import matplotlib
 
 matplotlib.use("Agg")
-import matplotlib.pyplot as plt  
-import numpy as np  
-import pandas as pd  
-import torch  
-from sklearn.ensemble import RandomForestRegressor 
-from sklearn.model_selection import GridSearchCV, TimeSeriesSplit  
-from sklearn.neighbors import KNeighborsRegressor 
-from sklearn.pipeline import make_pipeline 
-from sklearn.preprocessing import StandardScaler  
-from sklearn.svm import SVR  
-from statsmodels.tsa.seasonal import STL  
-from statsmodels.tsa.statespace.sarimax import SARIMAX  
-from torch import nn  
-from xgboost import XGBRegressor 
+import matplotlib.pyplot as plt  # noqa: E402
+import numpy as np  # noqa: E402
+import pandas as pd  # noqa: E402
+import torch  # noqa: E402
+from sklearn.ensemble import RandomForestRegressor  # noqa: E402
+from sklearn.model_selection import GridSearchCV, TimeSeriesSplit  # noqa: E402
+from sklearn.neighbors import KNeighborsRegressor  # noqa: E402
+from sklearn.pipeline import make_pipeline  # noqa: E402
+from sklearn.preprocessing import StandardScaler  # noqa: E402
+from sklearn.svm import SVR  # noqa: E402
+from statsmodels.tsa.seasonal import STL  # noqa: E402
+from statsmodels.tsa.statespace.sarimax import SARIMAX  # noqa: E402
+from torch import nn  # noqa: E402
+from xgboost import XGBRegressor  # noqa: E402
 
-from comun import (RAIZ, backtest, cargar_serie, estacional_ingenuo, 
+from comun import (RAIZ, backtest, cargar_serie, estacional_ingenuo,  # noqa: E402
                    fechas_siguientes, rmse)
 
 # Después de importar statsmodels, que al cargarse fija sus propios avisos.
@@ -51,6 +51,9 @@ ULTIMO = {}
 # ============================================================
 # 1. La serie y el modelo a superar
 # ============================================================
+# TODO: los mismos datos del miniproyecto 1: copie la serie a datos/ con su
+# ficha en datos/README.md y cambie estos cuatro datos. La serie de ejemplo
+# solo sirve para probar que el guion corre.
 ARCHIVO = "datos/pance_mensual.csv"
 FECHA = "mes"
 VALOR = "valor"
@@ -59,10 +62,9 @@ ESCALA_CLASICO = 100
 
 
 def preparar(serie):
-    """Verifica continuidad del índice mensual, ausencia de faltantes y atípicos.
+    """TODO: la misma preparación del miniproyecto 1 (huecos y datos atípicos).
 
-    Comprueba que la secuencia cronológica esté completa, sin registros
-    duplicados, centinelas ni meses omitidos.
+    Debe devolver una serie sin NaN.
     """
     print("\n--- Verificación de calidad de la serie ---")
 
@@ -121,9 +123,12 @@ def exogenas(serie):
 
 
 def modelo_clasico(serie):
-    """Devuelve la función modelo(entrenamiento, h) del mejor modelo del
-    miniproyecto 1: SARIMAX(0, 0, 0)(0, 1, 1, 12) + exógenas (dias_mes),
-    ajustado sobre entrenamiento / 100.
+    """TODO: devuelva la función modelo(entrenamiento, h) del mejor modelo del
+    miniproyecto 1, con los mismos órdenes y la misma transformación.
+
+    Copie aquí lo que esa función necesite, como sus variables exógenas.
+    Dentro de modelo, guarde el ajuste en ULTIMO["modelo"] para que la tabla
+    cuente sus parámetros.
     """
     x = exogenas(serie)
 
@@ -150,6 +155,7 @@ def modelo_clasico(serie):
     return modelo
 
 
+# TODO: el nombre del modelo, con sus órdenes, como aparece en la tabla.
 NOMBRE_CLASICO = "SARIMAX(0, 0, 0)(0, 1, 1, 12) + exógenas"
 
 
@@ -167,9 +173,9 @@ def graficar_serie(serie):
 # ============================================================
 # 2. La tabla supervisada
 # ============================================================
-# Lo que aprende cada modelo: "dif12" es la diferencia con el mismo mes del
-# año anterior (D = 1 en el miniproyecto 1 y en los talleres 1, 3 y 4).
-OBJETIVO = "dif12"
+# Lo que aprende cada modelo: "nivel" es la serie tal cual; "dif12" es la
+# diferencia con el mismo mes del año anterior.
+OBJETIVO = "dif12"     # TODO: elija "nivel" o "dif12" y justifíquelo
 REZAGOS = 12
 
 
@@ -183,11 +189,11 @@ def a_nivel(y, z):
 
 
 def tabla_supervisada(z):
-    """Una fila por mes con los rezagos 1 a REZAGOS, el mes del año y la media
-    móvil de tres meses anteriores.
+    """TODO: una fila por mes con los rezagos 1 a REZAGOS, al menos el mes del
+    año y al menos una estadística de ventana móvil.
 
-    Ninguna columna de la fila t usa z(t): los rezagos usan shift(k) y la
-    ventana móvil se calcula sobre z.shift(1).
+    Ninguna columna de la fila t puede usar z(t): los rezagos con shift(k) y
+    las ventanas sobre la serie ya corrida un mes.
     """
     X = pd.DataFrame({f"rezago_{k}": z.shift(k) for k in range(1, REZAGOS + 1)}, index=z.index)
     X["mes"] = z.index.month
@@ -196,8 +202,10 @@ def tabla_supervisada(z):
 
 
 def comprobar_sin_fuga(serie):
-    """Prueba en el código que ninguna fila ve el mes que predice ni en z ni
-    en serie: altera cada mes i y verifica que la fila i de la tabla no cambie.
+    """TODO: pruebe en el código que ninguna fila ve el mes que predice.
+
+    Por ejemplo, cambie el valor de cada mes y verifique que su fila de la
+    tabla no cambie. Si una fila cambia, lance AssertionError.
     """
     z = objetivo(serie)
     base = tabla_supervisada(z)
@@ -226,9 +234,12 @@ def filas_completas(y):
 
 
 def recursivo(ajustado, y, h):
-    """Pronóstico recursivo a h meses: agrega cada mes futuro como NaN, arma la
-    última fila de la tabla, predice z_hat, reconstruye el nivel con a_nivel y
-    lo incorpora a la serie antes de avanzar al mes siguiente.
+    """TODO: pronóstico recursivo a h meses.
+
+    Agregue el mes siguiente a y como NaN, arme la última fila de la tabla,
+    pronostique con ajustado.predict, devuelva el pronóstico al nivel con
+    a_nivel y escríbalo como si fuera dato antes de pasar al mes siguiente.
+    Devuelva los h pronósticos.
     """
     y = y.copy()
     for _ in range(h):
@@ -276,6 +287,7 @@ def xgboost(max_depth=3, learning_rate=0.1):
                         random_state=SEMILLA)
 
 
+# TODO: complete cada rejilla con dos a cuatro valores por hiperparámetro.
 REJILLAS = {
     "KNN": (knn, {"kneighborsregressor__n_neighbors": [3, 5, 10, 15]}),
     "SVR": (svr, {"svr__C": [0.1, 1.0, 10.0, 100.0], "svr__epsilon": [0.01, 0.1, 0.5]}),
@@ -289,8 +301,15 @@ def sin_prefijo(parametros):
 
 
 def ajustar_hiperparametros(serie):
-    """Para cada modelo de REJILLAS, elige la combinación con menor RMSE en
-    validación temporal (TimeSeriesSplit) usando solo serie.iloc[:-N_PRUEBA].
+    """TODO: para cada modelo de REJILLAS, la combinación con menor RMSE en
+    validación temporal.
+
+    Arme la tabla con serie.iloc[:-N_PRUEBA], para que ninguno de los meses
+    del backtest decida, y busque con GridSearchCV y TimeSeriesSplit. KNN y
+    SVR son make_pipeline: sus claves en la rejilla llevan el prefijo del paso
+    (kneighborsregressor__n_neighbors). Imprima lo elegido y su RMSE de
+    validación. Devuelva {nombre: {hiperparámetro: valor}}; sin_prefijo
+    quita el prefijo.
     """
     X_val, z_val = filas_completas(serie.iloc[:-N_PRUEBA])
     validacion = TimeSeriesSplit(n_splits=5, test_size=6)
@@ -313,10 +332,9 @@ def ajustar_hiperparametros(serie):
 
 
 def graficar_importancia(serie, elegidos):
-    """Importancia de las variables de Random Forest y XGBoost ajustados sobre
-    serie.iloc[:-N_PRUEBA] con los hiperparámetros elegidos; guarda
-    figuras/importancia.png.
-    """
+    """TODO: importancia de las variables de Random Forest y XGBoost
+    (feature_importances_), ajustados con lo elegido; guarde
+    figuras/importancia.png."""
     X_val, z_val = filas_completas(serie.iloc[:-N_PRUEBA])
     rf = bosque(**elegidos["Random Forest"]).fit(X_val, z_val)
     xgb = xgboost(**elegidos["XGBoost"]).fit(X_val, z_val)
@@ -349,6 +367,9 @@ def graficar_importancia(serie, elegidos):
 # en pocos minutos.
 EPOCAS_MAXIMAS = 300
 TASA = 0.01
+# En Colab con GPU la red y sus tensores van a cuda; sin GPU, a la CPU. Red se
+# encarga de los dos: las clases de cada red no tienen que mover nada.
+DISPOSITIVO = "cuda" if torch.cuda.is_available() else "cpu"
 
 
 class Red:
@@ -368,8 +389,8 @@ class Red:
         if self.secuencia:
             columnas = [f"rezago_{k}" for k in range(REZAGOS, 0, -1)]
             x = (X[columnas].to_numpy() - self.media) / self.desv
-            return torch.tensor(x[:, :, None], dtype=torch.float32)
-        return torch.tensor(self.escala_x.transform(X), dtype=torch.float32)
+            return torch.tensor(x[:, :, None], dtype=torch.float32, device=DISPOSITIVO)
+        return torch.tensor(self.escala_x.transform(X), dtype=torch.float32, device=DISPOSITIVO)
 
     def fit(self, X, z, X_val=None, z_val=None):
         torch.manual_seed(self.semilla)
@@ -377,8 +398,8 @@ class Red:
         self.escala_x = StandardScaler().fit(X)
         x = self.entradas(X)
         objetivo_t = torch.tensor(((z - self.media) / self.desv).to_numpy()[:, None],
-                                  dtype=torch.float32)
-        self.red = self.construir(x.shape[-1])
+                                  dtype=torch.float32, device=DISPOSITIVO)
+        self.red = self.construir(x.shape[-1]).to(DISPOSITIVO)
         optimizador = torch.optim.Adam(self.red.parameters(), lr=TASA)
         perdida = nn.MSELoss()
         self.perdidas = []
@@ -397,7 +418,7 @@ class Red:
     def predict(self, X):
         self.red.eval()
         with torch.no_grad():
-            salida = self.red(self.entradas(X)).numpy()[:, 0]
+            salida = self.red(self.entradas(X)).cpu().numpy()[:, 0]
         return salida * self.desv + self.media
 
 
@@ -412,8 +433,8 @@ class MLP(nn.Module):
 
 
 class LSTM(nn.Module):
-    """nn.LSTM de una capa sobre la secuencia (lote, 12, 1) y una capa lineal
-    que lee el último estado oculto."""
+    """TODO: nn.LSTM de una capa sobre la secuencia (lote, 12, 1) y una capa
+    lineal que lee el último estado oculto."""
 
     def __init__(self, ocultas=16):
         super().__init__()
@@ -425,6 +446,11 @@ class LSTM(nn.Module):
         return self.lineal(estados[:, -1, :])
 
 
+# TODO: la tercera red, a elección: Conv1D, un híbrido (el clásico más una
+# red sobre sus residuos) o un Transformer pequeño. Una Conv1D o un
+# Transformer reciben la secuencia como la LSTM y entran en CANDIDATAS. Un
+# híbrido no pasa por con_tabla: escriba su propia función
+# modelo(entrenamiento, h) y agregue su fila en main.
 class Conv1D(nn.Module):
     """Tercera red: convolución 1D sobre la ventana de 12 rezagos en orden
     (lote, 12, 1), con promedio temporal adaptativo y capa lineal de salida."""
@@ -444,6 +470,7 @@ class Conv1D(nn.Module):
 
 
 # Las candidatas: nombre, cómo se construye y si recibe la secuencia.
+# TODO: agregue la LSTM, con secuencia=True, y la tercera red.
 CANDIDATAS = {
     "MLP (8 ocultas)": (lambda n: MLP(n, 8), False),
     "MLP (32 ocultas)": (lambda n: MLP(n, 32), False),
@@ -453,8 +480,14 @@ CANDIDATAS = {
 
 
 def validar_redes(serie):
-    """Elige las épocas de cada red y el tamaño del MLP con validación temporal
-    sobre los últimos 12 meses anteriores al backtest; guarda figuras/perdida.png.
+    """TODO: elija las épocas de cada red con validación temporal.
+
+    Arme la tabla con serie.iloc[:-N_PRUEBA] y deje sus últimos 12 meses de
+    validación. Entrene cada candidata con Red(...).fit(X_ent, z_ent, X_val,
+    z_val): red.perdidas guarda por época la pérdida de entrenamiento y la de
+    validación. Grafique las curvas en figuras/perdida.png, quédese con el
+    MLP de menor pérdida de validación y devuelva {nombre: épocas}, con las
+    épocas de menor pérdida de validación de cada red.
     """
     X, z = filas_completas(serie.iloc[:-N_PRUEBA])
     X_ent, z_ent = X.iloc[:-12], z.iloc[:-12]
@@ -516,8 +549,10 @@ def red(nombre, epocas, semilla=SEMILLA):
 
 
 def repetir_con_semillas(serie, nombre, epocas):
-    """Evalúa la mejor red con cinco semillas en el backtest, guarda
-    resultados/semillas.csv e imprime la media y la desviación del RMSE.
+    """TODO: la mejor red con cinco semillas, cada una por el backtest.
+
+    Use con_tabla(red(nombre, epocas, semilla)). Guarde resultados/semillas.csv
+    con una fila por semilla e imprima la media y la desviación del RMSE.
     """
     semillas = [2026, 1, 7, 42, 11]
     filas_sem = []

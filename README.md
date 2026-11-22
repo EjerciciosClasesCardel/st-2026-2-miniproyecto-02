@@ -101,6 +101,12 @@ pip install -r requirements.txt
 python miniproyecto.py
 ```
 
+En Colab con GPU no hay que cambiar nada: la clase `Red` manda la red y sus
+tensores a la GPU cuando la hay y a la CPU cuando no, así que las redes que
+escriba el grupo no mueven nada a mano. Entre GPU y CPU las cifras pueden
+cambiar en los últimos decimales; la que cuenta es la de la acción de GitHub,
+que corre en CPU.
+
 En la sustentación, un integrante elegido en el momento comparte pantalla y
 corre el guion. La acción de GitHub del repositorio lo corre en cada *push*:
 si queda en rojo, el guion no corre de principio a fin.
