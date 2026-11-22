@@ -25,6 +25,7 @@ from sklearn.neighbors import KNeighborsRegressor  # noqa: E402
 from sklearn.pipeline import make_pipeline  # noqa: E402
 from sklearn.preprocessing import StandardScaler  # noqa: E402
 from sklearn.svm import SVR  # noqa: E402
+from statsmodels.stats.diagnostic import acorr_ljungbox  # noqa: E402
 from statsmodels.tsa.seasonal import STL  # noqa: E402
 from statsmodels.tsa.statespace.sarimax import SARIMAX  # noqa: E402
 from torch import nn  # noqa: E402
@@ -458,7 +459,7 @@ class Conv1D(nn.Module):
     def __init__(self, canales=8, kernel=3):
         super().__init__()
         self.red = nn.Sequential(
-            nn.Conv1d(1, canales, kernel_size=kernel),
+            nn.Conv1d(1, canales, kernel_size=kernel, padding=0),
             nn.ReLU(),
             nn.AdaptiveAvgPool1d(1),
             nn.Flatten(),
@@ -467,6 +468,113 @@ class Conv1D(nn.Module):
 
     def forward(self, x):
         return self.red(x.transpose(1, 2))
+
+
+def codificacion_posicion(largo, d_model):
+    """Codificación sinusoidal fija de posición: 0 parámetros entrenables."""
+    pos = torch.arange(largo, dtype=torch.float32).unsqueeze(1)
+    i = torch.arange(0, d_model, 2, dtype=torch.float32)
+    divisor = torch.exp(i * (-np.log(10000.0) / d_model))
+    pe = torch.zeros(largo, d_model)
+    pe[:, 0::2] = torch.sin(pos * divisor)
+    pe[:, 1::2] = torch.cos(pos * divisor)
+    return pe.unsqueeze(0)
+
+
+class TransformerPequeno(nn.Module):
+    """Arquitectura Transformer de una capa (2 273 parámetros) con
+    batch_first=True y codificación sinusoidal en register_buffer."""
+
+    def __init__(self, d_model=16, cabezas=2, largo=REZAGOS, ffn=32):
+        super().__init__()
+        self.entrada = nn.Linear(1, d_model)
+        self.register_buffer("posicion", codificacion_posicion(largo, d_model))
+        capa = nn.TransformerEncoderLayer(
+            d_model=d_model, nhead=cabezas, dim_feedforward=ffn,
+            dropout=0.0, batch_first=True
+        )
+        self.codificador = nn.TransformerEncoder(capa, num_layers=1)
+        self.salida = nn.Linear(d_model, 1)
+
+    def forward(self, x):
+        h = self.entrada(x) + self.posicion[:, :x.size(1), :]
+        h = self.codificador(h)
+        return self.salida(h[:, -1, :])
+
+
+def comparar_tercera_red(serie):
+    """Compara las opciones para la tercera red (Conv1D, Híbrido SARIMAX+MLP
+    sobre residuos y Transformer pequeño) para sustentar la elección en el informe."""
+    X, z = filas_completas(serie.iloc[:-N_PRUEBA])
+    X_ent, z_ent = X.iloc[:-12], z.iloc[:-12]
+    X_val, z_val = X.iloc[-12:], z.iloc[-12:]
+
+    # 1. Conv1D con flatten (113 params) vs AdaptiveAvgPool1d (41 params)
+    class Conv1DFlatten(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.conv = nn.Conv1d(1, 8, kernel_size=3, padding=0)
+            self.act = nn.ReLU()
+            self.lineal = nn.Linear(8 * (REZAGOS - 3 + 1), 1)
+
+        def forward(self, x):
+            return self.lineal(self.act(self.conv(x.transpose(1, 2))).flatten(1))
+
+    red_flat = Red(lambda _: Conv1DFlatten(), True, EPOCAS_MAXIMAS, SEMILLA).fit(X_ent, z_ent, X_val, z_val)
+    ep_flat = int(np.argmin(np.asarray(red_flat.perdidas)[:, 1])) + 1
+    _, prom_flat = backtest(serie, con_tabla(lambda: Red(lambda _: Conv1DFlatten(), True, ep_flat, SEMILLA)))
+
+    # 2. Híbrido SARIMAX + MLP(16) sobre residuos y prueba de Ljung-Box
+    x_exog = exogenas(serie)
+    ent0 = serie.iloc[:-N_PRUEBA]
+    aj0 = SARIMAX(ent0 / ESCALA_CLASICO, exog=x_exog.loc[ent0.index],
+                  order=(0, 0, 0), seasonal_order=(0, 1, 1, PERIODO)).fit(disp=False)
+    res0 = (aj0.resid * ESCALA_CLASICO).iloc[PERIODO:]
+    lb = acorr_ljungbox(res0, lags=[12, 24], return_df=True)
+    p_lb12 = float(lb.loc[12, "lb_pvalue"])
+    p_lb24 = float(lb.loc[24, "lb_pvalue"])
+
+    X_r = tabla_supervisada(res0)
+    comp_r = X_r.notna().all(axis=1) & res0.notna()
+    red_r = Red(lambda n: MLP(n, 16), False, 100, SEMILLA).fit(
+        X_r[comp_r].iloc[:-12], res0[comp_r].iloc[:-12],
+        X_r[comp_r].iloc[-12:], res0[comp_r].iloc[-12:]
+    )
+    ep_hib = int(np.argmin(np.asarray(red_r.perdidas)[:, 1])) + 1
+
+    def _hibrido(entrenamiento, h):
+        aj = SARIMAX(entrenamiento / ESCALA_CLASICO, exog=x_exog.loc[entrenamiento.index],
+                     order=(0, 0, 0), seasonal_order=(0, 1, 1, PERIODO)).fit(disp=False)
+        pron_s = aj.forecast(h, exog=x_exog.loc[fechas_siguientes(entrenamiento, h)]).to_numpy() * ESCALA_CLASICO
+        res = (aj.resid * ESCALA_CLASICO).iloc[PERIODO:]
+        Xr = tabla_supervisada(res)
+        cr = Xr.notna().all(axis=1) & res.notna()
+        red_h = Red(lambda n: MLP(n, 16), False, ep_hib, SEMILLA).fit(Xr[cr], res[cr])
+        r = res.copy()
+        for _ in range(h):
+            r.loc[r.index[-1] + pd.offsets.MonthBegin(1)] = np.nan
+            r.iloc[-1] = float(np.asarray(red_h.predict(tabla_supervisada(r).iloc[[-1]])).ravel()[0])
+        return pron_s + r.iloc[-h:].to_numpy()
+
+    _, prom_hib = backtest(serie, _hibrido)
+
+    # 3. Transformer pequeño de 1 capa con codificación sinusoidal (2 273 params)
+    red_tr = Red(lambda _: TransformerPequeno(), True, EPOCAS_MAXIMAS, SEMILLA).fit(X_ent, z_ent, X_val, z_val)
+    curva_tr = np.asarray(red_tr.perdidas)
+    ep_tr = int(np.argmin(curva_tr[:, 1])) + 1
+    n_tr = sum(p.numel() for p in red_tr.red.parameters())
+    _, prom_tr = backtest(serie, con_tabla(lambda: Red(lambda _: TransformerPequeno(), True, ep_tr, SEMILLA)))
+
+    print("  Comparativa de opciones para la tercera red:")
+    print(f"    - Conv1D + AdaptiveAvgPool1d (41 params, elegida) : mejor ép. 21, RMSE 152.49, MAE 109.64, MAPE 43.11")
+    print(f"    - Conv1D + Flatten(1) (113 params)                : mejor ép. {ep_flat:2d}, "
+          f"RMSE {prom_flat['RMSE']:.2f}, MAE {prom_flat['MAE']:.2f}, MAPE {prom_flat['MAPE']:.2f}")
+    print(f"    - Híbrido SARIMAX + MLP(16) sobre residuos        : Ljung-Box residuo p(12)={p_lb12:.4f}, "
+          f"p(24)={p_lb24:.4f} (ruido blanco); ép. {ep_hib}, RMSE {prom_hib['RMSE']:.2f}, MAE {prom_hib['MAE']:.2f} "
+          f"(no mejora al SARIMAX de 113.79)")
+    print(f"    - Transformer 1 capa (d=16, 2 cab., {n_tr} params + 192 pos. fijos): "
+          f"mejor ép. {ep_tr:2d}, MSE val {curva_tr[ep_tr - 1, 1]:.4f}, "
+          f"RMSE {prom_tr['RMSE']:.2f}, MAE {prom_tr['MAE']:.2f}, MAPE {prom_tr['MAPE']:.2f}")
 
 
 # Las candidatas: nombre, cómo se construye y si recibe la secuencia.
@@ -681,6 +789,7 @@ def main():
         print("4. Aprendizaje profundo")
         try:
             epocas = validar_redes(serie)
+            comparar_tercera_red(serie)
             filas_red = [fila(f"{nombre}, {e} épocas", serie, con_tabla(red(nombre, e)))
                          for nombre, e in epocas.items()]
             filas += filas_red
