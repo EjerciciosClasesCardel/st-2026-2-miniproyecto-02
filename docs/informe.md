@@ -1,10 +1,5 @@
 # Informe del miniproyecto 2
 
-Llene cada sección reemplazando los marcadores `{{...}}`, sin quitar las
-secciones. Las cifras salen de lo que imprime `python miniproyecto.py` y las
-figuras son las que ese guion deja en `figuras/`. Las fórmulas van en LaTeX
-(`$...$` o `$$...$$`).
-
 ## 1. La serie y el modelo a superar
 
 La serie corresponde a la **precipitación mensual acumulada ($\text{mm/mes}$)** en la estación **CDEA El Topacio** (código `2629020601`), ubicada en la cuenca del río Pance (Cali, Valle del Cauca), suministrada por la **Corporación Autónoma Regional del Valle del Cauca (CVC)**. Abarca de **enero de 2015 a febrero de 2026 (`134` observaciones mensuales continuas)**, con un régimen bimodal andino (máximo estacional en abril con $+118.6\text{ mm}$ y mínimo en agosto con $-125.1\text{ mm}$) y un rango observado entre **$5.7\text{ mm}$** (`2019-08`) y **$577.0\text{ mm}$** (`2024-04`). Del Miniproyecto 1 se mantiene la misma función `preparar`: **no hay meses faltantes (`0` huecos)**, duplicados ni valores negativos, y **se conservan los `7` meses atípicos** detectados por el rango intercuartílico del residuo de la descomposición STL robusta ($[-174.5,\ 172.7]\text{ mm}$: `2025-12`, `2022-06`, `2024-04`, `2023-03`, `2022-05`, `2023-10` y `2022-02`), dejando señalados los meses con totales diarios a las 07:00 como posible artefacto de medición sin alterar la serie para no introducir fuga de información.
@@ -19,8 +14,8 @@ donde en toda la serie $\Theta_1 = -0.853$, $\beta = -100.9\text{ mm/día}$ y se
 
 | Modelo clásico de referencia | RMSE (mm) | MAE (mm) | MAPE (%) | Parámetros | Segundos |
 |---|---|---|---|---|---|
-| **`SARIMAX(0, 0, 0)(0, 1, 1, 12) + exógenas`** | **113.79** | **91.75** | 54.31 | 3 | 3.5 |
-| `SARIMA(0, 0, 0)(0, 1, 1, 12)` (sin exógena, ref. MP1) | 117.05 | 93.35 | 54.68 | 2 | 3.1 |
+| **`SARIMAX(0, 0, 0)(0, 1, 1, 12) + exógenas`** | **113.79** | **91.75** | 54.31 | 3 | 2.3 |
+| `SARIMA(0, 0, 0)(0, 1, 1, 12)` (sin exógena, ref. MP1) | 117.05 | 93.35 | 54.67 | 2 | — |
 | `estacional ingenuo` (piso de referencia) | 154.93 | 112.39 | **43.90** | 0 | 0.0 |
 
 No hubo ningún cambio en las métricas al trasladarlo (`RMSE = 113.79 mm`, `MAE = 91.75 mm`, `MAPE = 54.31 %`), y el guion imprime también la referencia del `SARIMA(0, 0, 0)(0, 1, 1, 12)` puro ($y_t - y_{t-12} = \varepsilon_t + \Theta_1 \varepsilon_{t-12}$, `RMSE = 117.05 mm`, `MAE = 93.35 mm`, `2` parámetros), mostrando que casi toda la reducción del error frente al `estacional ingenuo` (`-26.6 %` en RMSE y `-18.4 %` en MAE) proviene del término estacional $\Theta_1 \approx -0.853$, que amortigua los choques pluviales del año anterior hacia el promedio histórico de cada mes.
@@ -85,10 +80,10 @@ En el *backtest* común sobre los últimos 24 meses, los cuatro modelos de apren
 
 | Modelo de aprendizaje automático | RMSE (mm) | MAE (mm) | MAPE (%) | Parámetros / nodos | Segundos |
 |---|---|---|---|---|---|
-| **`SVR` (`C=100, epsilon=0.5`)** | **150.93** | **113.94** | 55.25 | 1 471 | 0.7 |
-| `XGBoost` (`max_depth=2, lr=0.01`) | 154.27 | 117.69 | **51.23** | 1 374 | 3.4 |
-| `Random Forest` (`max_depth=10, leaf=5`) | 158.36 | 121.56 | 58.72 | 1 904 | 3.4 |
-| `KNN` (`n_neighbors=5`) | 165.65 | 132.21 | 69.75 | 1 372 | 0.7 |
+| **`SVR` (`C=100, epsilon=0.5`)** | **150.93** | **113.94** | 55.25 | 1 471 | 1.4 |
+| `XGBoost` (`max_depth=2, lr=0.01`) | 154.27 | 117.69 | **51.23** | 1 374 | 1.5 |
+| `Random Forest` (`max_depth=10, leaf=5`) | 158.36 | 121.56 | 58.72 | 1 904 | 2.6 |
+| `KNN` (`n_neighbors=5`) | 165.65 | 132.21 | 69.75 | 1 372 | 2.7 |
 
 **Ganador entre los cuatro de aprendizaje automático:** **`SVR`** con **`RMSE = 150.93 mm`** y **`MAE = 113.94 mm`**, seguido de **`XGBoost`** (`RMSE = 154.27 mm`, que mejora en `10.06 mm` al XGBoost sin regularizar del Taller 3 gracias a limitar `max_depth = 2` y `learning_rate = 0.01`). Tanto `SVR` como `XGBoost` superan en RMSE al `estacional ingenuo` (`154.93 mm`), mientras que `Random Forest` (`158.36 mm`) y sobre todo `KNN` (`165.65 mm`, arrastrado por vecinos post-pico con diferencias muy negativas) quedan por encima del piso ingenuo.
 
@@ -103,10 +98,10 @@ $$\hat{z}^{(\text{esc})} = W_2\,\text{ReLU}(W_1 x^{(\text{esc})} + b_1) + b_2.$$
    Se compararon dos tamaños de capa oculta: **`MLP (8 ocultas)`** ($14 \times 8 + 8 + 8 \times 1 + 1 = \mathbf{129}$ **parámetros**) y **`MLP (32 ocultas)`** ($14 \times 32 + 32 + 32 \times 1 + 1 = \mathbf{513}$ **parámetros**).
 2. **Red Recurrente `LSTM (16 ocultas)` (`secuencia=True`):** recibe únicamente los `12` rezagos ordenados cronológicamente del más antiguo (`rezago_12`) al más reciente (`rezago_1`) como un tensor tridimensional de forma $(n, 12, 1)$ estandarizado con la media y desviación de $z$, procesa un mes por paso a través de una celda `nn.LSTM(1, 16, batch_first=True)` con compuertas de olvido, entrada y salida, y proyecta el último estado oculto $h_{12} \in \mathbb{R}^{16}$ con `nn.Linear(16, 1)`. Cuenta con $4 \times (1 \times 16 + 16 \times 16 + 16 + 16) + (16 \times 1 + 1) = \mathbf{1\,233}$ **parámetros**.
 3. **Tercera red a elección — `Conv1D (8 canales)` (`secuencia=True`):** recibe la secuencia ordenada $(n, 12, 1)$ y la transpone con `x.transpose(1, 2)` a $(n, 1, 12)$ (porque `nn.Conv1d` espera canales en el eje 1 y tiempo en el eje 2; sin transponer trataría los 12 meses como 12 canales de largo 1), aplica `nn.Conv1d(1, 8, kernel_size=3, padding=0)` (sin relleno para no mezclar meses reales con ceros inventados al borde derecho ni mirar hacia el futuro) seguida de `ReLU`, resume las $12 - 3 + 1 = 10$ posiciones mediante promedio temporal adaptativo `nn.AdaptiveAvgPool1d(1)` y predice con `nn.Linear(8, 1)`.
-   - **Por qué elegimos `Conv1D + AdaptiveAvgPool1d` (`41` parámetros) frente a las otras alternativas** (verificadas en `comparar_tercera_red` de `miniproyecto.py`):
-     1. *Frente a `Conv1D + flatten(1)` (`113` parámetros):* al aplanar el mapa $(n, 8, 10)$ a `80` valores y pasar por `Linear(80, 1)`, cada posición del año recibe su propio peso como en un MLP y pierde la invarianza a traslación temporal, subiendo el RMSE en Pance de **`152.49 mm` (`MAPE = 43.11 %`)** a **`175.03 mm` (`MAPE = 106.47 %`, `34` épocas)**. Con `AdaptiveAvgPool1d(1)`, la red baja a $8 \times (3 + 1) + (8 + 1) = \mathbf{41}$ **parámetros** (30 veces menos que la LSTM) y logra el menor MAPE de toda la tabla (`43.11 %`).
+   - **Por qué elegimos `Conv1D + AdaptiveAvgPool1d` (`41` parámetros) frente a las otras alternativas.** La elegimos por parsimonia: con `74` filas de entrenamiento, la red con menos parámetros. `comparar_tercera_red` de `miniproyecto.py` deja las alternativas a la vista, con su MSE de validación (antes del *backtest*) y su *backtest*. El *backtest* no cambia la red que entra a la tabla; solo sirve de contraste.
+     1. *Frente a `Conv1D + flatten(1)` (`113` parámetros):* al aplanar el mapa $(n, 8, 10)$ a `80` valores y pasar por `Linear(80, 1)`, cada posición del año recibe su propio peso como en un MLP y se pierde la invarianza a traslación temporal. Aquí la validación de 12 meses apuntaba al revés: la `flatten` tuvo menor MSE de validación (`1.4377` frente a `1.7224`), pero en el *backtest* su RMSE sube de **`152.49 mm` (`MAPE = 43.11 %`)** a **`175.03 mm` (`MAPE = 106.47 %`, `34` épocas)**. Lo leemos como una advertencia: 12 meses de validación son pocos para escoger entre dos redes, y por eso preferimos la de menos parámetros. Con `AdaptiveAvgPool1d(1)` la red tiene $8 \times (3 + 1) + (8 + 1) = \mathbf{41}$ **parámetros** (30 veces menos que la LSTM) y logra el menor MAPE de toda la tabla (`43.11 %`).
      2. *Frente al `Híbrido SARIMAX + MLP(16) sobre sus residuos` (`3 + 241 = 244` parámetros):* un híbrido solo mejora al modelo clásico cuando el residuo del SARIMA aún conserva autocorrelación ($p < 0.05$ en Ljung-Box). En nuestra serie, al quitar los primeros $d + 12D = 12$ meses de arranque, la prueba de Ljung-Box sobre el residuo del `SARIMAX(0, 0, 0)(0, 1, 1, 12)` da **$p(12) = 0.4689$ y $p(24) = 0.6623$** ($p > 0.05$: ruido blanco). Por eso, al entrenar un `MLP(16)` sobre ese residuo (`6` épocas), el híbrido obtiene **`RMSE = 116.23 mm` y `MAE = 93.74 mm`**, empeorando en `+2.44 mm` al `SARIMAX` solo (`113.79 mm`) por ajustar ruido.
-     3. *Frente al `Transformer` de 1 capa (`d_model=16, nhead=2, dim_feedforward=32`):* aun sumando codificación sinusoidal fija de posición via `register_buffer` (`192` valores fijos, `0` parámetros entrenables, necesaria para que la autoatención distinga el orden temporal) y `batch_first=True`, la capa `TransformerEncoderLayer` tiene **`2 273` parámetros entrenables** (`32` de proyección de entrada, `1 088` en $Q, K, V$ y salida de atención, `1 072` en la red *feed-forward*, `64` en *LayerNorm* y `17` de salida), es decir, **`30.7` parámetros por ventana de entrenamiento** (`74` filas). Con tan pocas ventanas los pesos de autoatención se aplanan hacia el promedio uniforme ($1/12 \approx 0.083$), obteniendo en el *backtest* **`RMSE = 152.00 mm`, `MAE = 109.35 mm`, `MAPE = 43.35 %` (`12` épocas)**, prácticamente idéntico a la `Conv1D` (`RMSE = 152.49 mm`, `MAPE = 43.11 %`) pero con **`55` veces más parámetros**.
+     3. *Frente al `Transformer` de 1 capa (`d_model=16, nhead=2, dim_feedforward=32`):* aun sumando codificación sinusoidal fija de posición via `register_buffer` (`192` valores fijos, `0` parámetros entrenables, necesaria para que la autoatención distinga el orden temporal) y `batch_first=True`, la capa `TransformerEncoderLayer` tiene **`2 273` parámetros entrenables** (`32` de proyección de entrada, `1 088` en $Q, K, V$ y salida de atención, `1 072` en la red *feed-forward*, `64` en *LayerNorm* y `17` de salida), es decir, **`30.7` parámetros por ventana de entrenamiento** (`74` filas). Su MSE de validación (`1.8766`, `12` épocas) es el más alto de las candidatas. Medimos los pesos de autoatención que pone el último mes sobre los 12 pasos (promedio de los dos cabezales, en las `86` ventanas anteriores al *backtest*): todos quedan entre **`0.072` y `0.117`**, cerca del promedio uniforme $1/12 \approx 0.083$, y solo el mes más reciente sube algo (`0.117`). Es decir, la atención casi promedia la ventana, igual que vimos en clase con los pasajeros: con tan pocas ventanas no aprende a mirar meses concretos. En el *backtest* obtiene **`RMSE = 152.00 mm`, `MAE = 109.35 mm`, `MAPE = 43.35 %`**, prácticamente igual a la `Conv1D` (`RMSE = 152.49 mm`, `MAPE = 43.11 %`), pero con **`55` veces más parámetros**.
 
 ![Curvas de pérdida](../figuras/perdida.png)
 
@@ -145,15 +140,33 @@ La tabla completa generada por `python miniproyecto.py` en `resultados/metricas.
 
 | Modelo | RMSE | MAE | MAPE (%) | Parámetros | Segundos |
 |---|---|---|---|---|---|
-| **`SARIMAX(0, 0, 0)(0, 1, 1, 12) + exógenas`** | **113.79** | **91.75** | 54.31 | **3** | 3.3 |
-| `LSTM (16 ocultas), 37 épocas` | 137.37 | 99.40 | 44.34 | 1 233 | 2.3 |
-| `SVR` | 150.93 | 113.94 | 55.25 | 1 471 | **0.7** |
-| `Conv1D (8 canales), 21 épocas` | 152.49 | 109.64 | **43.11** | 41 | 1.8 |
-| `MLP (32 ocultas), 11 épocas` | 154.03 | 113.47 | 66.20 | 513 | 1.2 |
-| `XGBoost` | 154.27 | 117.69 | 51.23 | 1 374 | 3.4 |
+| **`SARIMAX(0, 0, 0)(0, 1, 1, 12) + exógenas`** | **113.79** | **91.75** | 54.31 | **3** | 2.3 |
+| `LSTM (16 ocultas), 37 épocas` | 137.37 | 99.40 | 44.34 | 1 233 | 1.4 |
+| `SVR` | 150.93 | 113.94 | 55.25 | 1 471 | 1.4 |
+| `Conv1D (8 canales), 21 épocas` | 152.49 | 109.64 | **43.11** | 41 | **0.8** |
+| `MLP (32 ocultas), 11 épocas` | 154.03 | 113.47 | 66.20 | 513 | **0.8** |
+| `XGBoost` | 154.27 | 117.69 | 51.23 | 1 374 | 1.5 |
 | `estacional ingenuo` | 154.93 | 112.39 | 43.90 | 0 | 0.0 |
-| `Random Forest` | 158.36 | 121.56 | 58.72 | 1 904 | 3.4 |
-| `KNN` | 165.65 | 132.21 | 69.75 | 1 372 | **0.7** |
+| `Random Forest` | 158.36 | 121.56 | 58.72 | 1 904 | 2.6 |
+| `KNN` | 165.65 | 132.21 | 69.75 | 1 372 | 2.7 |
+
+Los segundos cambian un poco entre corridas y entre equipos; los de esta tabla son de una corrida en CPU, en la que el guion completo tardó `57 s`.
+
+**El peor mes de cada modelo.** El guion guarda en `resultados/peor_mes.csv` el mes del *backtest* con mayor error absoluto medio, tomando todos los orígenes que pronostican ese mes:
+
+| Modelo | Peor mes | Lluvia real (mm) | Error absoluto medio (mm) | Pronósticos de ese mes |
+|---|---|---|---|---|
+| `SARIMAX` | `2024-04` | 577.0 | 303.1 | 2 |
+| `LSTM (16 ocultas), 37 épocas` | `2024-04` | 577.0 | 361.2 | 2 |
+| `SVR` | `2024-04` | 577.0 | 345.2 | 2 |
+| `Conv1D (8 canales), 21 épocas` | `2024-03` | 126.0 | 346.0 | 1 |
+| `MLP (32 ocultas), 11 épocas` | `2025-02` | 464.0 | 345.6 | 12 |
+| `XGBoost` | `2024-04` | 577.0 | 431.4 | 2 |
+| `estacional ingenuo` | `2024-03` | 126.0 | 348.6 | 1 |
+| `Random Forest` | `2024-04` | 577.0 | 447.2 | 2 |
+| `KNN` | `2024-04` | 577.0 | 373.0 | 2 |
+
+Seis de los nueve modelos fallan más en **abril de 2024**, el récord de la serie (`577.0 mm`): ninguno lo ve venir, y el que menos se equivoca es el SARIMAX. Los dos árboles se equivocan más (`431` a `447 mm`) porque no pronostican por encima de las diferencias que ya vieron. La `Conv1D` y el estacional ingenuo fallan más en marzo de 2024 (`126.0 mm`): el ingenuo copia el marzo de 2023, uno de los meses atípicos (`474.6 mm`), y la `Conv1D` reconstruye el nivel sobre ese mismo marzo con una diferencia pronosticada casi nula. El `MLP` falla más en febrero de 2025 (`464.0 mm`), un salto húmedo que pronostican los 12 orígenes.
 
 ![Pronósticos desde el último origen](../figuras/pronosticos.png)
 
@@ -161,7 +174,7 @@ La tabla completa generada por `python miniproyecto.py` en `resultados/metricas.
 
 1. **Desproporción entre número de parámetros y meses disponibles:** en los `13` orígenes del *backtest*, la tabla supervisada solo dispone de **`86` a `98` filas completas** de entrenamiento (`74` filas al descontar validación). Mientras el `SARIMAX(0, 0, 0)(0, 1, 1, 12) + exógenas` estima **`3` parámetros** (`2` en el SARIMA puro, a razón de $\approx 49$ observaciones por parámetro), el `MLP (32 ocultas)` ajusta **`513` pesos** ($5.2$ parámetros por fila) y la `LSTM (16 ocultas)` ajusta **`1 233` pesos** ($12.6$ parámetros por fila). Como muestran las curvas de pérdida (`figuras/perdida.png`), a partir de la época `11` en el MLP y de la `37` en la LSTM las redes memorizan el ruido meteorológico de entrenamiento (`MSE` $\to 0.0000$).
 2. **Estructura parsimoniosa de la dependencia temporal:** como demostraron la ACF/PACF del Miniproyecto 1 y las importancias de variables (`figuras/importancia.png`, donde `rezago_12` concentra `43.15 %` en Random Forest y `21.02 %` en XGBoost), la única señal lineal fuerte en $z_t = y_t - y_{t-12}$ es la autocorrelación negativa en el rezago 12 ($\rho_{12} = -0.35$) producida por el rebote hacia la media tras un año anómalo. El parámetro $\Theta_1 = -0.853$ del SARIMA captura exactamente esa relación con una sola ecuación en diferencias, mientras que las redes y árboles intentan combinar `12` a `14` entradas ruidosas y propagan esos errores a lo largo de los `12` pasos recursivos.
-3. **El mes crítico en que fallan los modelos y el problema de los récords climáticos (`2026-01` en el último origen y `2024-04 = 577.0 mm` en los primeros orígenes):** las redes neuronales entrenadas con pérdida cuadrática media (MSE) tienden a suavizar y fallar sistemáticamente en los récords o rebotes climáticos extremos que salen de la distribución histórica de entrenamiento (Zhang et al., 2026). En el pronóstico a 12 meses desde el último origen (`2025-02` $\to$ `2025-03` a `2026-02`, `figuras/pronosticos.png`), el peor error de los tres modelos ocurre en **enero de 2026 (`2026-01`, lluvia real = `315.2 mm`)**:
+3. **El mes crítico en que fallan los modelos y el problema de los récords climáticos (`2026-01` en el último origen y `2024-04 = 577.0 mm` en los primeros orígenes):** los modelos entrenados con pocas filas no pronostican bien los récords o los rebotes extremos que no aparecen en su entrenamiento (como muestra la tabla del peor mes, seis de los nueve modelos fallan más en el récord de `2024-04`). En el pronóstico a 12 meses desde el último origen (`2025-02` $\to$ `2025-03` a `2026-02`, `figuras/pronosticos.png`), el peor error de los tres modelos ocurre en **enero de 2026 (`2026-01`, lluvia real = `315.2 mm`)**:
    - En enero de 2024 hubo una sequía extrema (`15.0 mm`) y enero de 2025 siguió siendo inusualmente seco (`53.8 mm`), mientras que febrero de 2025 tuvo un salto húmedo (`464.0 mm`, $z_{\text{2025-02}} = +313.6\text{ mm}$).
    - Al reconstruir el nivel como $\hat{y}_{\text{2026-01}} = y_{\text{2025-01}} + \hat{z}_{\text{2026-01}} = 53.8 + \hat{z}_{\text{2026-01}}$, tanto **`SVR`** como **`LSTM (16 ocultas)`** arrastran diferencias recursivas negativas tras el pico de febrero y llegan a lluvias físicamente imposibles (`-48.9 mm` en `SVR` y `-12.3 mm` en `LSTM`). Por eso `a_nivel` recorta todo pronóstico en `0 mm`: con el recorte ambos pronostican **`0.0 mm` (error `-315.2 mm`)**, con RMSE del último origen de **`153.87 mm` en `SVR`** y **`150.83 mm` en `LSTM`** (sin recorte eran `162.61 mm` y `152.99 mm`). El recorte nunca empeora un pronóstico y mejora un poco a todos los modelos con `dif12` (por ejemplo, la `LSTM` baja de `137.84` a `137.37 mm` y `KNN` de `168.96` a `165.65 mm`), pero no cambia la conclusión: el modelo sigue sin ver venir el enero lluvioso.
    - En cambio, el **`SARIMAX`** ($\Theta_1 = -0.853$) descuenta el $85.3\,\%$ de la sequía anormal de `2025-01` y pronostica **`135.6 mm` en `2026-01` (error `-179.6 mm`, RMSE del último origen `102.48 mm`)**, evitando el colapso.
@@ -171,8 +184,8 @@ La tabla completa generada por `python miniproyecto.py` en `resultados/metricas.
 
 El grupo **pondría en uso el modelo clásico del Miniproyecto 1 —`SARIMAX(0, 0, 0)(0, 1, 1, 12) + exógenas` (o su versión `SARIMA(0, 0, 0)(0, 1, 1, 12)` pura de `2` parámetros, dado que la exógena de días del mes solo modifica febreros bisiestos)**— y, como alternativa de aprendizaje profundo únicamente si se exigiera una arquitectura neuronal, la **`LSTM (16 ocultas), 37 épocas`** (o la **`Conv1D (8 canales), 21 épocas`** por su bajo MAPE de `43.11 %` con solo `41` parámetros).
 
-Frente al modelo clásico (`RMSE = 113.79 mm`, `MAE = 91.75 mm`, `3` parámetros, `3.3 s`), elegir la mejor red neuronal (**`LSTM (16 ocultas), 37 épocas`**, `RMSE = 137.37 mm`, `MAE = 99.40 mm`) implica pagar un costo desfavorable en las tres dimensiones operativas y un mayor error (`+23.58 mm` en RMSE y `+7.65 mm` en MAE):
+Frente al modelo clásico (`RMSE = 113.79 mm`, `MAE = 91.75 mm`, `3` parámetros, `2.3 s`), elegir la mejor red neuronal (**`LSTM (16 ocultas), 37 épocas`**, `RMSE = 137.37 mm`, `MAE = 99.40 mm`) implica pagar un costo desfavorable en las tres dimensiones operativas y un mayor error (`+23.58 mm` en RMSE y `+7.65 mm` en MAE):
 - **En datos:** el SARIMA/SARIMAX opera desde el mes `13` (solo pierde `12` meses por la diferencia estacional $D = 1$, aprovechando `122` observaciones efectivas), mientras que la tabla supervisada y las ventanas de la LSTM con `OBJETIVO = "dif12"` y `12` rezagos **pierden `24` meses de historia** (todo `2015` y `2016`, dejando solo `86` a `98` filas por origen), un sacrificio crítico en series hidrológicas mensuales cortas.
-- **En tiempo de entrenamiento y estabilidad:** aunque un *backtest* de la LSTM con `37` épocas fijas en CPU tarda **`2.3 s`** (similar a los **`3.3 s`** del SARIMAX y a los **`3.4 s`** de Random Forest), elegir sus épocas con validación previa y estabilizar su varianza entre semillas ($\pm 10.74\text{ mm}$ de RMSE en `5` semillas) multiplica por `5` el tiempo de cómputo ($\approx 14\text{ s}$).
+- **En tiempo de entrenamiento y estabilidad:** aunque un *backtest* de la LSTM con `37` épocas fijas en CPU tarda **`1.4 s`** (del orden de los **`2.3 s`** del SARIMAX y los **`2.6 s`** de Random Forest), elegir sus épocas con validación previa y estabilizar su varianza entre semillas ($\pm 10.74\text{ mm}$ de RMSE en `5` semillas) multiplica por `5` el tiempo de cómputo ($\approx 7\text{ s}$).
 - **En explicabilidad:** el modelo clásico se resume en un único parámetro interpretable ($\Theta_1 = -0.853$: cada mes se pronostica como el promedio histórico de ese mes más el $14.7\,\%$ de la anomalía del año anterior) y garantiza niveles coherentes con la climatología de la cuenca de Pance, mientras que la LSTM distribuye su decisión en **`1 233` parámetros opacos** de compuertas recurrentes que, ante secuencias atípicas en modo recursivo, pueden predecir precipitaciones negativas (`-12.3 mm` en `2026-01` antes del recorte en `0 mm`).
 - **Modelo local frente a modelo global — ¿cambiaría la elección si tuviéramos que pronosticar mil series como la nuestra?:** **sí cambiaría.** Para **una sola serie mensual corta** (la estación CDEA El Topacio aislada, con `86`–`98` filas supervisadas), un **modelo local** parsimonioso como `SARIMAX` (`3` parámetros) es imbatible porque los modelos con cientos o miles de parámetros sobreajustan. Sin embargo, si la CVC tuviera que pronosticar simultáneamente **`1 000` estaciones pluviométricas** de la red hidroclimatológica andina, apilar las `1 000` series estandarizadas en una única tabla supervisada con covariables de cuenca y altitud (**modelo global**, Montero-Manso y Hyndman, 2021) proporcionaría **`~110 000` ventanas de entrenamiento**. En ese régimen ($< 0.02$ parámetros por ventana), un **`XGBoost`** o una red global (**`LSTM` / `Transformer`**) aprendería patrones regionales compartidos (como anomalías de El Niño y La Niña entre cuencas vecinas) sin sobreajustar y evitaría ajustar, diagnosticar y mantener `1 000` modelos SARIMA individuales.

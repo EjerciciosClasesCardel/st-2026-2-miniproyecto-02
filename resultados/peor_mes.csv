@@ -1,0 +1,10 @@
+modelo,peor_mes,real,error_abs_medio,pronosticos
+"SARIMAX(0, 0, 0)(0, 1, 1, 12) + exógenas",2024-04,577.0,303.1,2
+"LSTM (16 ocultas), 37 épocas",2024-04,577.0,361.2,2
+SVR,2024-04,577.0,345.2,2
+"Conv1D (8 canales), 21 épocas",2024-03,126.0,346.0,1
+"MLP (32 ocultas), 11 épocas",2025-02,464.0,345.6,12
+XGBoost,2024-04,577.0,431.4,2
+estacional ingenuo,2024-03,126.0,348.6,1
+Random Forest,2024-04,577.0,447.2,2
+KNN,2024-04,577.0,373.0,2

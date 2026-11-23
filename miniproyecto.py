@@ -52,7 +52,7 @@ ULTIMO = {}
 # ============================================================
 # 1. La serie y el modelo a superar
 # ============================================================
-# TODO: los mismos datos del miniproyecto 1: copie la serie a datos/ con su
+# Los mismos datos del miniproyecto 1: copie la serie a datos/ con su
 # ficha en datos/README.md y cambie estos cuatro datos. La serie de ejemplo
 # solo sirve para probar que el guion corre.
 ARCHIVO = "datos/pance_mensual.csv"
@@ -63,7 +63,7 @@ ESCALA_CLASICO = 100
 
 
 def preparar(serie):
-    """TODO: la misma preparación del miniproyecto 1 (huecos y datos atípicos).
+    """La misma preparación del miniproyecto 1 (huecos y datos atípicos).
 
     Debe devolver una serie sin NaN.
     """
@@ -124,7 +124,7 @@ def exogenas(serie):
 
 
 def modelo_clasico(serie):
-    """TODO: devuelva la función modelo(entrenamiento, h) del mejor modelo del
+    """Devuelva la función modelo(entrenamiento, h) del mejor modelo del
     miniproyecto 1, con los mismos órdenes y la misma transformación.
 
     Copie aquí lo que esa función necesite, como sus variables exógenas.
@@ -156,7 +156,7 @@ def modelo_clasico(serie):
     return modelo
 
 
-# TODO: el nombre del modelo, con sus órdenes, como aparece en la tabla.
+# El nombre del modelo, con sus órdenes, como aparece en la tabla.
 NOMBRE_CLASICO = "SARIMAX(0, 0, 0)(0, 1, 1, 12) + exógenas"
 
 
@@ -176,7 +176,7 @@ def graficar_serie(serie):
 # ============================================================
 # Lo que aprende cada modelo: "nivel" es la serie tal cual; "dif12" es la
 # diferencia con el mismo mes del año anterior.
-OBJETIVO = "dif12"     # TODO: elija "nivel" o "dif12" y justifíquelo
+OBJETIVO = "dif12"     # Elija "nivel" o "dif12" y justifíquelo
 REZAGOS = 12
 
 
@@ -194,7 +194,7 @@ def a_nivel(y, z):
 
 
 def tabla_supervisada(z):
-    """TODO: una fila por mes con los rezagos 1 a REZAGOS, al menos el mes del
+    """Una fila por mes con los rezagos 1 a REZAGOS, al menos el mes del
     año y al menos una estadística de ventana móvil.
 
     Ninguna columna de la fila t puede usar z(t): los rezagos con shift(k) y
@@ -207,7 +207,7 @@ def tabla_supervisada(z):
 
 
 def comprobar_sin_fuga(serie):
-    """TODO: pruebe en el código que ninguna fila ve el mes que predice.
+    """Pruebe en el código que ninguna fila ve el mes que predice.
 
     Por ejemplo, cambie el valor de cada mes y verifique que su fila de la
     tabla no cambie. Si una fila cambia, lance AssertionError.
@@ -239,7 +239,7 @@ def filas_completas(y):
 
 
 def recursivo(ajustado, y, h):
-    """TODO: pronóstico recursivo a h meses.
+    """Pronóstico recursivo a h meses.
 
     Agregue el mes siguiente a y como NaN, arme la última fila de la tabla,
     pronostique con ajustado.predict, devuelva el pronóstico al nivel con
@@ -292,7 +292,7 @@ def xgboost(max_depth=3, learning_rate=0.1):
                         random_state=SEMILLA)
 
 
-# TODO: complete cada rejilla con dos a cuatro valores por hiperparámetro.
+# Complete cada rejilla con dos a cuatro valores por hiperparámetro.
 REJILLAS = {
     "KNN": (knn, {"kneighborsregressor__n_neighbors": [3, 5, 10, 15]}),
     "SVR": (svr, {"svr__C": [0.1, 1.0, 10.0, 100.0], "svr__epsilon": [0.01, 0.1, 0.5]}),
@@ -306,7 +306,7 @@ def sin_prefijo(parametros):
 
 
 def ajustar_hiperparametros(serie):
-    """TODO: para cada modelo de REJILLAS, la combinación con menor RMSE en
+    """Para cada modelo de REJILLAS, la combinación con menor RMSE en
     validación temporal.
 
     Arme la tabla con serie.iloc[:-N_PRUEBA], para que ninguno de los meses
@@ -337,7 +337,7 @@ def ajustar_hiperparametros(serie):
 
 
 def graficar_importancia(serie, elegidos):
-    """TODO: importancia de las variables de Random Forest y XGBoost
+    """Importancia de las variables de Random Forest y XGBoost
     (feature_importances_), ajustados con lo elegido; guarde
     figuras/importancia.png."""
     X_val, z_val = filas_completas(serie.iloc[:-N_PRUEBA])
@@ -438,7 +438,7 @@ class MLP(nn.Module):
 
 
 class LSTM(nn.Module):
-    """TODO: nn.LSTM de una capa sobre la secuencia (lote, 12, 1) y una capa
+    """Nn.LSTM de una capa sobre la secuencia (lote, 12, 1) y una capa
     lineal que lee el último estado oculto."""
 
     def __init__(self, ocultas=16):
@@ -451,7 +451,7 @@ class LSTM(nn.Module):
         return self.lineal(estados[:, -1, :])
 
 
-# TODO: la tercera red, a elección: Conv1D, un híbrido (el clásico más una
+# La tercera red, a elección: Conv1D, un híbrido (el clásico más una
 # red sobre sus residuos) o un Transformer pequeño. Una Conv1D o un
 # Transformer reciben la secuencia como la LSTM y entran en CANDIDATAS. Un
 # híbrido no pasa por con_tabla: escriba su propia función
@@ -506,9 +506,24 @@ class TransformerPequeno(nn.Module):
         return self.salida(h[:, -1, :])
 
 
-def comparar_tercera_red(serie):
+def pesos_atencion(red_tr, X):
+    """Pesos de autoatención (promedio de los cabezales) que pone el último mes
+    de cada ventana sobre los 12 pasos, promediados sobre las ventanas de X."""
+    modelo = red_tr.red.eval()
+    with torch.no_grad():
+        x = red_tr.entradas(X)
+        h = modelo.entrada(x) + modelo.posicion[:, :x.size(1), :]
+        capa = modelo.codificador.layers[0]
+        _, pesos = capa.self_attn(h, h, h, need_weights=True, average_attn_weights=True)
+    return pesos[:, -1, :].mean(dim=0).cpu().numpy()
+
+
+def comparar_tercera_red(serie, conv1d):
     """Compara las opciones para la tercera red (Conv1D, Híbrido SARIMAX+MLP
-    sobre residuos y Transformer pequeño) para sustentar la elección en el informe."""
+    sobre residuos y Transformer pequeño) para sustentar la elección en el informe.
+
+    conv1d trae la Conv1D elegida: sus épocas, su MSE de validación y su fila
+    del backtest, calculados en main, para no repetir cifras a mano."""
     X, z = filas_completas(serie.iloc[:-N_PRUEBA])
     X_ent, z_ent = X.iloc[:-12], z.iloc[:-12]
     X_val, z_val = X.iloc[-12:], z.iloc[-12:]
@@ -526,6 +541,7 @@ def comparar_tercera_red(serie):
 
     red_flat = Red(lambda _: Conv1DFlatten(), True, EPOCAS_MAXIMAS, SEMILLA).fit(X_ent, z_ent, X_val, z_val)
     ep_flat = int(np.argmin(np.asarray(red_flat.perdidas)[:, 1])) + 1
+    val_flat = float(np.asarray(red_flat.perdidas)[ep_flat - 1, 1])
     _, prom_flat = backtest(serie, con_tabla(lambda: Red(lambda _: Conv1DFlatten(), True, ep_flat, SEMILLA)))
 
     # 2. Híbrido SARIMAX + MLP(16) sobre residuos y prueba de Ljung-Box
@@ -569,9 +585,19 @@ def comparar_tercera_red(serie):
     n_tr = sum(p.numel() for p in red_tr.red.parameters())
     _, prom_tr = backtest(serie, con_tabla(lambda: Red(lambda _: TransformerPequeno(), True, ep_tr, SEMILLA)))
 
-    print("  Comparativa de opciones para la tercera red:")
-    print(f"    - Conv1D + AdaptiveAvgPool1d (41 params, elegida) : mejor ép. 21, RMSE 152.49, MAE 109.64, MAPE 43.11")
+    # Pesos de atención del Transformer entrenado con sus épocas elegidas,
+    # sobre las ventanas anteriores al backtest (no se usa para elegir nada).
+    red_tr_ep = Red(lambda _: TransformerPequeno(), True, ep_tr, SEMILLA).fit(X_ent, z_ent)
+    pesos = pesos_atencion(red_tr_ep, X)
+
+    print("  Comparativa de opciones para la tercera red "
+          "(MSE de validación antes del backtest; el backtest solo confirma):")
+    f_conv = conv1d["fila"]
+    print(f"    - Conv1D + AdaptiveAvgPool1d ({f_conv['parametros']} params, elegida) : "
+          f"mejor ép. {conv1d['epocas']:2d}, MSE val {conv1d['val']:.4f}, "
+          f"RMSE {f_conv['RMSE']:.2f}, MAE {f_conv['MAE']:.2f}, MAPE {f_conv['MAPE']:.2f}")
     print(f"    - Conv1D + Flatten(1) (113 params)                : mejor ép. {ep_flat:2d}, "
+          f"MSE val {val_flat:.4f}, "
           f"RMSE {prom_flat['RMSE']:.2f}, MAE {prom_flat['MAE']:.2f}, MAPE {prom_flat['MAPE']:.2f}")
     print(f"    - Híbrido SARIMAX + MLP(16) sobre residuos        : Ljung-Box residuo p(12)={p_lb12:.4f}, "
           f"p(24)={p_lb24:.4f} (ruido blanco); ép. {ep_hib}, RMSE {prom_hib['RMSE']:.2f}, MAE {prom_hib['MAE']:.2f} "
@@ -579,10 +605,14 @@ def comparar_tercera_red(serie):
     print(f"    - Transformer 1 capa (d=16, 2 cab., {n_tr} params + 192 pos. fijos): "
           f"mejor ép. {ep_tr:2d}, MSE val {curva_tr[ep_tr - 1, 1]:.4f}, "
           f"RMSE {prom_tr['RMSE']:.2f}, MAE {prom_tr['MAE']:.2f}, MAPE {prom_tr['MAPE']:.2f}")
+    print(f"      Pesos de atención del último mes ({len(X)} ventanas, 1/12 = {1 / REZAGOS:.3f}): "
+          f"mín {pesos.min():.3f}, máx {pesos.max():.3f}; "
+          f"rezago_12 {pesos[0]:.3f}, rezago_1 {pesos[-1]:.3f}")
+    print("      por paso (rezago_12 a rezago_1): " + " ".join(f"{p:.3f}" for p in pesos))
 
 
 # Las candidatas: nombre, cómo se construye y si recibe la secuencia.
-# TODO: agregue la LSTM, con secuencia=True, y la tercera red.
+# Agregue la LSTM, con secuencia=True, y la tercera red.
 CANDIDATAS = {
     "MLP (8 ocultas)": (lambda n: MLP(n, 8), False),
     "MLP (32 ocultas)": (lambda n: MLP(n, 32), False),
@@ -592,7 +622,7 @@ CANDIDATAS = {
 
 
 def validar_redes(serie):
-    """TODO: elija las épocas de cada red con validación temporal.
+    """Elija las épocas de cada red con validación temporal.
 
     Arme la tabla con serie.iloc[:-N_PRUEBA] y deje sus últimos 12 meses de
     validación. Entrene cada candidata con Red(...).fit(X_ent, z_ent, X_val,
@@ -651,7 +681,7 @@ def validar_redes(serie):
     for nombre in CANDIDATAS:
         if not nombre.startswith("MLP"):
             elegidas[nombre] = mejores_epocas[nombre]
-    return elegidas
+    return elegidas, minimos_val
 
 
 def red(nombre, epocas, semilla=SEMILLA):
@@ -661,7 +691,7 @@ def red(nombre, epocas, semilla=SEMILLA):
 
 
 def repetir_con_semillas(serie, nombre, epocas):
-    """TODO: la mejor red con cinco semillas, cada una por el backtest.
+    """La mejor red con cinco semillas, cada una por el backtest.
 
     Use con_tabla(red(nombre, epocas, semilla)). Guarde resultados/semillas.csv
     con una fila por semilla e imprima la media y la desviación del RMSE.
@@ -710,13 +740,34 @@ def contar_parametros(ajustado):
     return 0
 
 
+PEORES_MESES = []
+
+
 def fila(nombre, serie, modelo):
     ULTIMO.clear()
+    pronosticos = []
+
+    def registrado(entrenamiento, h):
+        # Guarda cada pronóstico para ubicar el mes con mayor error; no cambia
+        # lo que el modelo ve ni lo que devuelve.
+        pronostico = np.asarray(modelo(entrenamiento, h))
+        fechas = fechas_siguientes(entrenamiento, h)
+        pronosticos.append(pd.Series(pronostico, index=fechas))
+        return pronostico
+
     inicio = time.perf_counter()
-    _, promedio = backtest(serie, modelo)
+    _, promedio = backtest(serie, registrado)
     segundos = time.perf_counter() - inicio
     parametros = contar_parametros(ULTIMO["modelo"]) if "modelo" in ULTIMO else 0
-    print(f"  {nombre}: RMSE {promedio['RMSE']:.2f} en {segundos:.1f} s")
+    errores = pd.concat([(p - serie.reindex(p.index)).abs() for p in pronosticos])
+    por_mes = errores.groupby(level=0).mean()
+    peor = por_mes.idxmax()
+    PEORES_MESES.append({"modelo": nombre, "peor_mes": f"{peor:%Y-%m}",
+                         "real": round(float(serie.loc[peor]), 1),
+                         "error_abs_medio": round(float(por_mes.max()), 1),
+                         "pronosticos": int(errores.loc[[peor]].size)})
+    print(f"  {nombre}: RMSE {promedio['RMSE']:.2f} en {segundos:.1f} s; "
+          f"peor mes {peor:%Y-%m} (error absoluto medio {por_mes.max():.1f} mm)")
     return {"modelo": nombre, "RMSE": round(promedio["RMSE"], 2),
             "MAE": round(promedio["MAE"], 2), "MAPE": round(promedio["MAPE"], 2),
             "parametros": parametros, "segundos": round(segundos, 1)}
@@ -792,11 +843,13 @@ def main():
 
         print("4. Aprendizaje profundo")
         try:
-            epocas = validar_redes(serie)
-            comparar_tercera_red(serie)
+            epocas, minimos_val = validar_redes(serie)
             filas_red = [fila(f"{nombre}, {e} épocas", serie, con_tabla(red(nombre, e)))
                          for nombre, e in epocas.items()]
             filas += filas_red
+            conv = "Conv1D (8 canales)"
+            comparar_tercera_red(serie, {"epocas": epocas[conv], "val": minimos_val[conv],
+                                         "fila": filas_red[list(epocas).index(conv)]})
             mejor = min(zip(epocas, filas_red), key=lambda par: par[1]["RMSE"])[0]
             elegidos_para_figura[mejor] = con_tabla(red(mejor, epocas[mejor]))
             repetir_con_semillas(serie, mejor, epocas[mejor])
@@ -808,6 +861,11 @@ def main():
     tabla.to_csv(RESULTADOS / "metricas.csv", index=False)
     print(tabla.to_string(index=False))
     print("Mejor modelo por RMSE:", tabla.iloc[0]["modelo"])
+    peores = pd.DataFrame(PEORES_MESES).set_index("modelo").loc[tabla["modelo"]].reset_index()
+    peores.to_csv(RESULTADOS / "peor_mes.csv", index=False)
+    print("Peor mes de cada modelo en el backtest (error absoluto medio sobre los "
+          "orígenes que lo pronostican):")
+    print(peores.to_string(index=False))
     if len(elegidos_para_figura) > 1:
         graficar_pronosticos(serie, elegidos_para_figura)
     print(f"Tiempo total: {time.perf_counter() - inicio:.0f} s")
