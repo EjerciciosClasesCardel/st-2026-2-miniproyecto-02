@@ -1,6 +1,6 @@
 red,semilla,RMSE,MAE,MAPE
-"LSTM (16 ocultas), 37 épocas",2026,137.84,99.89,44.89
-"LSTM (16 ocultas), 37 épocas",1,159.74,124.29,61.05
-"LSTM (16 ocultas), 37 épocas",7,154.19,117.15,57.18
-"LSTM (16 ocultas), 37 épocas",42,139.55,106.48,51.04
-"LSTM (16 ocultas), 37 épocas",11,133.66,104.35,53.67
+"LSTM (16 ocultas), 37 épocas",2026,137.37,99.4,44.34
+"LSTM (16 ocultas), 37 épocas",1,157.59,122.97,60.16
+"LSTM (16 ocultas), 37 épocas",7,152.96,116.18,56.38
+"LSTM (16 ocultas), 37 épocas",42,138.58,105.35,49.58
+"LSTM (16 ocultas), 37 épocas",11,132.92,103.36,52.59

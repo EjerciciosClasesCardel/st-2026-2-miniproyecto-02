@@ -185,8 +185,12 @@ def objetivo(y):
 
 
 def a_nivel(y, z):
-    """Del pronóstico del objetivo al nivel: y(t) = y(t-12) + z(t) si z es la diferencia."""
-    return y.iloc[-PERIODO] + z if OBJETIVO == "dif12" else z
+    """Del pronóstico del objetivo al nivel: y(t) = y(t-12) + z(t) si z es la diferencia.
+
+    La lluvia no puede ser negativa: el pronóstico se recorta en 0 mm.
+    """
+    nivel = y.iloc[-PERIODO] + z if OBJETIVO == "dif12" else z
+    return np.maximum(nivel, 0.0)
 
 
 def tabla_supervisada(z):
