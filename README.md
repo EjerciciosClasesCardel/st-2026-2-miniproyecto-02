@@ -31,9 +31,8 @@ del grupo. Si falta algún dato, se advierte en la realimentación.
 
 | Nombre completo | Código | Correo institucional |
 |---|---|---|
-| | | |
-| | | |
-| | | |
+| Luis Hernando Montoya Muñoz | 1144201150 | {{pendiente}} |
+| Gustavo Adolfo Morales Ortiz | 1130669987 | {{pendiente}} |
 
 ## Entrega
 

@@ -25,6 +25,8 @@ from sklearn.neighbors import KNeighborsRegressor  # noqa: E402
 from sklearn.pipeline import make_pipeline  # noqa: E402
 from sklearn.preprocessing import StandardScaler  # noqa: E402
 from sklearn.svm import SVR  # noqa: E402
+from statsmodels.tsa.arima.model import ARIMA  # noqa: E402
+from statsmodels.tsa.seasonal import STL  # noqa: E402
 from statsmodels.tsa.statespace.sarimax import SARIMAX  # noqa: E402
 from torch import nn  # noqa: E402
 from xgboost import XGBRegressor  # noqa: E402
@@ -50,44 +52,81 @@ ULTIMO = {}
 # ============================================================
 # 1. La serie y el modelo a superar
 # ============================================================
-# TODO: los mismos datos del miniproyecto 1: copie la serie a datos/ con su
-# ficha en datos/README.md y cambie estos cuatro datos. La serie de ejemplo
-# solo sirve para probar que el guion corre.
-ARCHIVO = "datos/air_passengers.csv"
-FECHA = "Month"
-VALOR = "#Passengers"
+# Los mismos datos del miniproyecto 1: precipitación mensual (mm) de la
+# estación CDEA El Topacio, cuenca del río Pance (CVC). Ficha en datos/README.md.
+ARCHIVO = "datos/pance_mensual.csv"
+FECHA = "mes"
+VALOR = "valor"
 PERIODO = 12
+ETIQUETA = "lluvia (mm)"   # para los ejes de las figuras
 
 
 def preparar(serie):
-    """TODO: la misma preparación del miniproyecto 1 (huecos y datos atípicos).
+    """La misma preparación del miniproyecto 1.
 
-    Debe devolver una serie sin NaN.
+    Huecos: la serie no tiene meses faltantes, fechas repetidas ni códigos de
+    faltante (la regla del 80 % de días con dato nunca se activó al construirla).
+    Atípicos: se buscan en el residuo de una STL robusta con la regla del IQR,
+    para comparar cada mes con lo esperado para ese mes y no con toda la serie.
+    Se conservan: son lluvia real o meses registrados con totales diarios, un
+    posible artefacto de medición que no se puede corregir sin otra fuente.
     """
-    return serie
+    indice = pd.date_range(serie.index.min(), serie.index.max(), freq="MS")
+    completa = serie.reindex(indice)
+    assert completa.isna().sum() == 0, "faltan meses en la secuencia"
+    assert not serie.index.duplicated().any(), "hay fechas repetidas"
+    assert (serie >= 0).all(), "hay códigos de faltante (valores negativos)"
+
+    residuo = STL(completa, period=PERIODO, robust=True).fit().resid
+    q1, q3 = residuo.quantile([0.25, 0.75])
+    bajo, alto = q1 - 1.5 * (q3 - q1), q3 + 1.5 * (q3 - q1)
+    atipicos = residuo[(residuo < bajo) | (residuo > alto)]
+    print(f"  preparar: {len(completa)} meses seguidos, sin huecos; "
+          f"{len(atipicos)} atípicos en el residuo STL "
+          f"({', '.join(f'{m:%Y-%m}' for m in atipicos.index)}), conservados")
+    return completa
+
+
+# La lluvia está en cientos de mm: como en el miniproyecto 1, el modelo se
+# ajusta con la serie dividida por 100 y el pronóstico se multiplica por 100.
+# Es la misma constante para todos los meses, así que no introduce fuga.
+ESCALA = 100
+ORDEN, ORDEN_ESTACIONAL = (0, 0, 0), (0, 1, 1, PERIODO)
+
+
+def exogenas(serie, h=12):
+    """El número de días de cada mes, desde el primer mes de la serie hasta h
+    meses después del último. La lluvia del mes es una suma: un mes más largo
+    acumula más. Sale del calendario, así que se conoce para cualquier mes
+    futuro y no introduce fuga."""
+    meses = pd.date_range(serie.index[0], serie.index[-1] + pd.DateOffset(months=h), freq="MS")
+    return pd.DataFrame({"dias_mes": meses.days_in_month.astype(float)}, index=meses)
 
 
 def modelo_clasico(serie):
-    """TODO: devuelva la función modelo(entrenamiento, h) del mejor modelo del
-    miniproyecto 1, con los mismos órdenes y la misma transformación.
+    """El mejor modelo del miniproyecto 1: SARIMAX(0,0,0)(0,1,1)12 con el
+    número de días del mes como exógena, ajustado sobre serie / ESCALA con la
+    clase ARIMA de statsmodels, como en el miniproyecto 1."""
+    x = exogenas(serie)
 
-    Copie aquí lo que esa función necesite, como sus variables exógenas.
-    Dentro de modelo, guarde el ajuste en ULTIMO["modelo"] para que la tabla
-    cuente sus parámetros.
-    """
-    raise NotImplementedError("el mejor modelo del miniproyecto 1")
+    def modelo(entrenamiento, h):
+        ajuste = ARIMA(entrenamiento / ESCALA, exog=x.loc[entrenamiento.index],
+                       order=ORDEN, seasonal_order=ORDEN_ESTACIONAL).fit()
+        ULTIMO["modelo"] = ajuste
+        futuro = x.loc[fechas_siguientes(entrenamiento, h)]
+        return ajuste.forecast(h, exog=futuro).to_numpy() * ESCALA
+    return modelo
 
 
-# TODO: el nombre del modelo, con sus órdenes, como aparece en la tabla.
-NOMBRE_CLASICO = "SARIMA del miniproyecto 1"
+NOMBRE_CLASICO = "SARIMAX(0,0,0)(0,1,1)12 + días del mes"
 
 
 def graficar_serie(serie):
     figura, eje = plt.subplots(figsize=(9, 3.4))
     eje.plot(serie.index, serie.to_numpy())
     eje.axvline(serie.index[-N_PRUEBA], color="gray", linestyle="--")
-    eje.set_title(f"{VALOR}: serie mensual; a la derecha de la línea, los meses del backtest")
-    eje.set_ylabel(VALOR)
+    eje.set_title("Lluvia mensual en El Topacio (mm); a la derecha de la línea, los meses del backtest")
+    eje.set_ylabel(ETIQUETA)
     figura.tight_layout()
     figura.savefig(FIGURAS / "serie.png", dpi=120)
     plt.close(figura)
@@ -98,7 +137,14 @@ def graficar_serie(serie):
 # ============================================================
 # Lo que aprende cada modelo: "nivel" es la serie tal cual; "dif12" es la
 # diferencia con el mismo mes del año anterior.
-OBJETIVO = "nivel"     # TODO: elija "nivel" o "dif12" y justifíquelo
+# Se eligió "nivel". Con los cuatro modelos por defecto en el backtest, el
+# nivel gana por RMSE en tres de cuatro (Random Forest 135.0 frente a 161.4,
+# XGBoost 134.1 frente a 164.3, KNN 145.2 frente a 169.0); solo SVR mejora con
+# dif12 (152.0 frente a 163.3), porque con la diferencia casi repite el año
+# anterior. La diferencia anual de la lluvia es casi ruido (su única memoria
+# clara es el rezago 12, que ya trae la tabla), y con el nivel la tabla tiene
+# 98 filas antes del backtest en lugar de 86.
+OBJETIVO = "nivel"
 REZAGOS = 12
 
 
@@ -111,23 +157,42 @@ def a_nivel(y, z):
     return y.iloc[-PERIODO] + z if OBJETIVO == "dif12" else z
 
 
-def tabla_supervisada(z):
-    """TODO: una fila por mes con los rezagos 1 a REZAGOS, al menos el mes del
-    año y al menos una estadística de ventana móvil.
+VENTANA = 3
 
-    Ninguna columna de la fila t puede usar z(t): los rezagos con shift(k) y
-    las ventanas sobre la serie ya corrida un mes.
+
+def tabla_supervisada(z):
+    """Una fila por mes: los rezagos 1 a REZAGOS, el mes del año y la media
+    móvil de los VENTANA meses anteriores.
+
+    Ninguna columna de la fila t usa z(t): shift(k) trae el valor de hace k
+    meses y la media móvil se calcula sobre la serie ya corrida un mes.
     """
-    raise NotImplementedError("tabla supervisada")
+    X = pd.DataFrame({f"rezago_{k}": z.shift(k) for k in range(1, REZAGOS + 1)},
+                     index=z.index)
+    X["mes"] = z.index.month
+    X[f"media_{VENTANA}"] = z.shift(1).rolling(VENTANA).mean()
+    return X
 
 
 def comprobar_sin_fuga(serie):
-    """TODO: pruebe en el código que ninguna fila ve el mes que predice.
+    """Prueba en el código que ninguna fila ve el mes que predice.
 
-    Por ejemplo, cambie el valor de cada mes y verifique que su fila de la
-    tabla no cambie. Si una fila cambia, lance AssertionError.
+    Para cada mes t, cambia y(t) por un valor absurdo y vuelve a armar la
+    tabla: la fila t (lo que el modelo ve para pronosticar t) tiene que quedar
+    igual. Si cambia, hay fuga y se lanza AssertionError.
     """
-    raise NotImplementedError("prueba de que no hay fuga")
+    y = serie.copy()
+    base = tabla_supervisada(objetivo(y))
+    for mes in y.index:
+        alterada = y.copy()
+        alterada[mes] = alterada[mes] + 10_000
+        fila = tabla_supervisada(objetivo(alterada)).loc[mes]
+        if not fila.equals(base.loc[mes]):
+            cambiadas = list(fila.index[(fila != base.loc[mes]) & fila.notna()])
+            raise AssertionError(f"fuga: la fila de {mes:%Y-%m} cambia con su propio valor "
+                                 f"(columnas {cambiadas})")
+    print(f"  sin fuga: en los {len(y)} meses, cambiar y(t) no cambia la fila de t "
+          f"({base.shape[1]} columnas: {', '.join(base.columns[[0, REZAGOS - 1, -2, -1]])}, ...)")
 
 
 def filas_completas(y):
@@ -138,14 +203,20 @@ def filas_completas(y):
 
 
 def recursivo(ajustado, y, h):
-    """TODO: pronóstico recursivo a h meses.
+    """Pronóstico recursivo a h meses.
 
-    Agregue el mes siguiente a y como NaN, arme la última fila de la tabla,
-    pronostique con ajustado.predict, devuelva el pronóstico al nivel con
-    a_nivel y escríbalo como si fuera dato antes de pasar al mes siguiente.
-    Devuelva los h pronósticos.
+    Agrega el mes siguiente como NaN, arma su fila con la tabla (que solo mira
+    meses anteriores), pronostica el objetivo, lo devuelve al nivel con a_nivel
+    y lo escribe como si fuera dato antes de pasar al mes siguiente. Así, desde
+    el segundo mes, los rezagos más recientes son pronósticos, no datos.
     """
-    raise NotImplementedError("pronóstico recursivo")
+    y = y.copy()
+    for _ in range(h):
+        y.loc[y.index[-1] + pd.offsets.MonthBegin(1)] = np.nan
+        fila = tabla_supervisada(objetivo(y)).iloc[[-1]]
+        z_hat = float(np.asarray(ajustado.predict(fila)).ravel()[0])
+        y.iloc[-1] = a_nivel(y.iloc[:-1], z_hat)
+    return y.iloc[-h:].to_numpy()
 
 
 def con_tabla(fabrica):
@@ -388,7 +459,7 @@ def graficar_pronosticos(serie, modelos):
         pronostico = modelo(entrenamiento, 12)
         eje.plot(real.index, pronostico, marker="o", markersize=3,
                  label=f"{nombre} (RMSE {rmse(real, pronostico):.1f})")
-    eje.set_ylabel(VALOR)
+    eje.set_ylabel(ETIQUETA)
     eje.set_title("Pronóstico a 12 meses desde el último origen")
     eje.legend(fontsize=8)
     figura.tight_layout()
