@@ -1,8 +1,6 @@
 # datos
 
-La serie del grupo va en esta carpeta, en CSV: la misma del miniproyecto 1.
-Copie aquí la ficha que llenó entonces y borre la serie de ejemplo cuando ya
-no la use.
+La serie del grupo, la misma del miniproyecto 1, con la ficha que se llenó entonces.
 
 | Campo | Valor |
 |---|---|
@@ -11,14 +9,9 @@ no la use.
 | Fuente | Corporación Autónoma Regional del Valle del Cauca (CVC), red de telemetría hidrometeorológica ([cvc.gov.co](https://www.cvc.gov.co)). Datos suministrados por la CVC por correo electrónico |
 | Licencia | Uso académico autorizado por la CVC; se cita a la CVC como fuente. No es una licencia abierta |
 | Frecuencia | mensual |
-| Construcción | `preparar_serie.py` une los archivos `EXPORT_CPANCE_PRECIP_*.xls` (telemetría cada 10 minutos y, en días con falla del sensor, totales diarios a las 07:00), quita duplicados y suma por mes. Un mes con menos del 80 % de días con datos queda vacío; la regla no se activó |
+| Construcción | En el miniproyecto 1 se unieron los archivos `EXPORT_CPANCE_PRECIP_*.xls` (telemetría cada 10 minutos y, en días con falla del sensor, totales diarios a las 07:00), se quitaron duplicados y se sumó por mes. Un mes con menos del 80 % de días con datos habría quedado vacío; la regla no se activó |
 | Periodo | 2015-01 a 2026-02 (134 observaciones) |
 | Columna de fecha | `mes` (formato `AAAA-MM`) |
 | Columna que se pronostica | `valor` (mm/mes) |
 
-## Serie de ejemplo
-
-`air_passengers.csv`: pasajeros mensuales de una aerolínea entre 1949 y 1960,
-la serie clásica de Box y Jenkins, tomada de Kaggle
-(`rakannimer/air-passengers`). Solo sirve para comprobar que el guion corre;
-el miniproyecto se hace con la serie del grupo.
+La serie de ejemplo (`air_passengers.csv`) se borró al pasar a la serie del grupo.
