@@ -31,9 +31,9 @@ del grupo. Si falta algún dato, se advierte en la realimentación.
 
 | Nombre completo | Código | Correo institucional |
 |---|---|---|
-| | | |
-| | | |
-| | | |
+| Luis Felipe Álvarez | 22602104 | luis_felipe.alvarez@uao.edu.co |
+| Natali Charrupi Riascos | 22600606 | natali.charrupi@uao.edu.co |
+| Julián Payán Potes | 22601460 | julian.payan@uao.edu.co |
 
 ## Entrega
 
@@ -95,6 +95,28 @@ acción de GitHub: redes pequeñas, de unas decenas de neuronas, y pocas
 
 Con el entorno `series` del curso activo, PyTorch para CPU se instala
 primero, para que `pip` no baje la versión con CUDA, que pesa unos 2,5 GB:
+
+```bash
+# Crear el entorno virutal
+python -m venv venv
+
+# Activar entorno linux o mac
+source venv/bin/activate
+
+# Activar entorno windows
+source venv/Scripts/activate
+
+# Desactivar entorno
+source venv/bin/deactivate
+
+# Instalar librerias 
+pip install -r requirements.txt
+
+# Correr miniproyecto
+python miniproyecto.py
+```
+
+# Correr Opcional
 
 ```bash
 pip install torch --index-url https://download.pytorch.org/whl/cpu
