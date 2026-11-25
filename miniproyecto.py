@@ -25,7 +25,7 @@ from sklearn.neighbors import KNeighborsRegressor  # noqa: E402
 from sklearn.pipeline import make_pipeline  # noqa: E402
 from sklearn.preprocessing import StandardScaler  # noqa: E402
 from sklearn.svm import SVR  # noqa: E402
-from statsmodels.tsa.arima.model import ARIMA  # noqa: E402
+from statsmodels.stats.diagnostic import acorr_ljungbox  # noqa: E402
 from statsmodels.tsa.seasonal import STL  # noqa: E402
 from statsmodels.tsa.statespace.sarimax import SARIMAX  # noqa: E402
 from torch import nn  # noqa: E402
@@ -52,81 +52,120 @@ ULTIMO = {}
 # ============================================================
 # 1. La serie y el modelo a superar
 # ============================================================
-# Los mismos datos del miniproyecto 1: precipitación mensual (mm) de la
-# estación CDEA El Topacio, cuenca del río Pance (CVC). Ficha en datos/README.md.
+# Los mismos datos del miniproyecto 1: copie la serie a datos/ con su
+# ficha en datos/README.md y cambie estos cuatro datos. La serie de ejemplo
+# solo sirve para probar que el guion corre.
 ARCHIVO = "datos/pance_mensual.csv"
 FECHA = "mes"
 VALOR = "valor"
 PERIODO = 12
-ETIQUETA = "lluvia (mm)"   # para los ejes de las figuras
+ESCALA_CLASICO = 100
 
 
 def preparar(serie):
-    """La misma preparación del miniproyecto 1.
+    """La misma preparación del miniproyecto 1 (huecos y datos atípicos).
 
-    Huecos: la serie no tiene meses faltantes, fechas repetidas ni códigos de
-    faltante (la regla del 80 % de días con dato nunca se activó al construirla).
-    Atípicos: se buscan en el residuo de una STL robusta con la regla del IQR,
-    para comparar cada mes con lo esperado para ese mes y no con toda la serie.
-    Se conservan: son lluvia real o meses registrados con totales diarios, un
-    posible artefacto de medición que no se puede corregir sin otra fuente.
+    Debe devolver una serie sin NaN.
     """
-    indice = pd.date_range(serie.index.min(), serie.index.max(), freq="MS")
-    completa = serie.reindex(indice)
-    assert completa.isna().sum() == 0, "faltan meses en la secuencia"
-    assert not serie.index.duplicated().any(), "hay fechas repetidas"
-    assert (serie >= 0).all(), "hay códigos de faltante (valores negativos)"
+    print("\n--- Verificación de calidad de la serie ---")
 
-    residuo = STL(completa, period=PERIODO, robust=True).fit().resid
+    # 1. Construir índice mensual completo desde la primera fecha hasta la última
+    primera_fecha = serie.index.min()
+    ultima_fecha = serie.index.max()
+    indice_completo = pd.date_range(start=primera_fecha, end=ultima_fecha, freq="MS")
+
+    print(f"  Primera fecha detectada         : {primera_fecha:%Y-%m}")
+    print(f"  Última fecha detectada          : {ultima_fecha:%Y-%m}")
+    print(f"  Índice mensual construido       : {len(indice_completo)} meses consecutivos")
+
+    # Reindexar la serie sobre el índice completo
+    serie_reindexada = serie.reindex(indice_completo)
+    nans_al_reindexar = serie_reindexada.isna().sum()
+    print(f"  NaNs al reindexar               : {nans_al_reindexar} (meses faltantes en la secuencia)")
+
+    # 2. Comprobar códigos que esconden un faltante o inconsistencias
+    fechas_rep = serie.index.duplicated().sum()
+    negativos = (serie < 0).sum()
+    ceros = (serie == 0).sum()
+    print(f"  Fechas repetidas                : {fechas_rep}")
+    print(f"  Valores negativos / centinelas  : {negativos}")
+    print(f"  Meses con lluvia = 0 mm         : {ceros} (mínimo observado: {serie.min():.1f} mm)")
+
+    # 3. Atípicos sobre el residuo de la STL robusta: compara cada mes con lo
+    # esperado para ese mes (tendencia + estacional), no con toda la serie
+    stl = STL(serie, period=PERIODO, robust=True).fit()
+    residuo = stl.resid
     q1, q3 = residuo.quantile([0.25, 0.75])
-    bajo, alto = q1 - 1.5 * (q3 - q1), q3 + 1.5 * (q3 - q1)
-    atipicos = residuo[(residuo < bajo) | (residuo > alto)]
-    print(f"  preparar: {len(completa)} meses seguidos, sin huecos; "
-          f"{len(atipicos)} atípicos en el residuo STL "
-          f"({', '.join(f'{m:%Y-%m}' for m in atipicos.index)}), conservados")
-    return completa
+    iqr = q3 - q1
+    limite_inf, limite_sup = q1 - 1.5 * iqr, q3 + 1.5 * iqr
+    atipicos = residuo[(residuo < limite_inf) | (residuo > limite_sup)]
+    print(f"  Atípicos (IQR del residuo STL)  : {len(atipicos)} meses fuera de "
+          f"[{limite_inf:.1f}, {limite_sup:.1f}] mm")
+    tabla = pd.DataFrame({"observado": serie[atipicos.index],
+                          "esperado": (stl.trend + stl.seasonal)[atipicos.index],
+                          "residuo": atipicos,
+                          "peso STL": pd.Series(stl.weights, index=serie.index)[atipicos.index]})
+    tabla.index = tabla.index.strftime("%Y-%m")
+    print(tabla.sort_values("residuo", key=abs, ascending=False).round(2).to_string())
+    print("  Decisión sobre atípicos         : conservar (meses con totales diarios: posible artefacto de medición)\n")
+
+    # Validaciones formales
+    assert nans_al_reindexar == 0, f"Faltan {nans_al_reindexar} meses en la secuencia histórica"
+    assert fechas_rep == 0, "Hay fechas duplicadas en la serie"
+    assert negativos == 0, "Hay códigos de faltante (-999 o negativos)"
+
+    return serie_reindexada
 
 
-# La lluvia está en cientos de mm: como en el miniproyecto 1, el modelo se
-# ajusta con la serie dividida por 100 y el pronóstico se multiplica por 100.
-# Es la misma constante para todos los meses, así que no introduce fuga.
-ESCALA = 100
-ORDEN, ORDEN_ESTACIONAL = (0, 0, 0), (0, 1, 1, PERIODO)
-
-
-def exogenas(serie, h=12):
-    """El número de días de cada mes, desde el primer mes de la serie hasta h
-    meses después del último. La lluvia del mes es una suma: un mes más largo
-    acumula más. Sale del calendario, así que se conoce para cualquier mes
-    futuro y no introduce fuga."""
-    meses = pd.date_range(serie.index[0], serie.index[-1] + pd.DateOffset(months=h), freq="MS")
+def exogenas(serie):
+    """Variables exógenas del miniproyecto 1: días del calendario de cada mes."""
+    meses = pd.date_range(serie.index[0], serie.index[-1] + pd.DateOffset(months=12), freq="MS")
     return pd.DataFrame({"dias_mes": meses.days_in_month.astype(float)}, index=meses)
 
 
 def modelo_clasico(serie):
-    """El mejor modelo del miniproyecto 1: SARIMAX(0,0,0)(0,1,1)12 con el
-    número de días del mes como exógena, ajustado sobre serie / ESCALA con la
-    clase ARIMA de statsmodels, como en el miniproyecto 1."""
+    """Devuelva la función modelo(entrenamiento, h) del mejor modelo del
+    miniproyecto 1, con los mismos órdenes y la misma transformación.
+
+    Copie aquí lo que esa función necesite, como sus variables exógenas.
+    Dentro de modelo, guarde el ajuste en ULTIMO["modelo"] para que la tabla
+    cuente sus parámetros.
+    """
     x = exogenas(serie)
 
+    # Imprime también la referencia del SARIMA(0,0,0)(0,1,1,12) puro del miniproyecto 1
+    def _sarima_puro(entrenamiento, h):
+        aj = SARIMAX(entrenamiento / ESCALA_CLASICO, order=(0, 0, 0),
+                     seasonal_order=(0, 1, 1, PERIODO)).fit(disp=False)
+        return aj.forecast(h).to_numpy() * ESCALA_CLASICO
+
+    _, prom_puro = backtest(serie, _sarima_puro)
+    print(f"  Referencia SARIMA(0, 0, 0)(0, 1, 1, 12) sin exógena: "
+          f"RMSE {prom_puro['RMSE']:.2f}, MAE {prom_puro['MAE']:.2f}, "
+          f"MAPE {prom_puro['MAPE']:.2f} (2 parámetros)")
+
     def modelo(entrenamiento, h):
-        ajuste = ARIMA(entrenamiento / ESCALA, exog=x.loc[entrenamiento.index],
-                       order=ORDEN, seasonal_order=ORDEN_ESTACIONAL).fit()
+        ajuste = SARIMAX(entrenamiento / ESCALA_CLASICO,
+                         exog=x.loc[entrenamiento.index],
+                         order=(0, 0, 0),
+                         seasonal_order=(0, 1, 1, PERIODO)).fit(disp=False)
         ULTIMO["modelo"] = ajuste
         futuro = x.loc[fechas_siguientes(entrenamiento, h)]
-        return ajuste.forecast(h, exog=futuro).to_numpy() * ESCALA
+        return ajuste.forecast(h, exog=futuro).to_numpy() * ESCALA_CLASICO
+
     return modelo
 
 
-NOMBRE_CLASICO = "SARIMAX(0,0,0)(0,1,1)12 + días del mes"
+# El nombre del modelo, con sus órdenes, como aparece en la tabla.
+NOMBRE_CLASICO = "SARIMAX(0, 0, 0)(0, 1, 1, 12) + exógenas"
 
 
 def graficar_serie(serie):
     figura, eje = plt.subplots(figsize=(9, 3.4))
     eje.plot(serie.index, serie.to_numpy())
     eje.axvline(serie.index[-N_PRUEBA], color="gray", linestyle="--")
-    eje.set_title("Lluvia mensual en El Topacio (mm); a la derecha de la línea, los meses del backtest")
-    eje.set_ylabel(ETIQUETA)
+    eje.set_title(f"{VALOR}: serie mensual; a la derecha de la línea, los meses del backtest")
+    eje.set_ylabel(VALOR)
     figura.tight_layout()
     figura.savefig(FIGURAS / "serie.png", dpi=120)
     plt.close(figura)
@@ -137,14 +176,7 @@ def graficar_serie(serie):
 # ============================================================
 # Lo que aprende cada modelo: "nivel" es la serie tal cual; "dif12" es la
 # diferencia con el mismo mes del año anterior.
-# Se eligió "nivel". Con los cuatro modelos por defecto en el backtest, el
-# nivel gana por RMSE en tres de cuatro (Random Forest 135.0 frente a 161.4,
-# XGBoost 134.1 frente a 164.3, KNN 145.2 frente a 169.0); solo SVR mejora con
-# dif12 (152.0 frente a 163.3), porque con la diferencia casi repite el año
-# anterior. La diferencia anual de la lluvia es casi ruido (su única memoria
-# clara es el rezago 12, que ya trae la tabla), y con el nivel la tabla tiene
-# 98 filas antes del backtest en lugar de 86.
-OBJETIVO = "nivel"
+OBJETIVO = "dif12"     # Elija "nivel" o "dif12" y justifíquelo
 REZAGOS = 12
 
 
@@ -153,46 +185,50 @@ def objetivo(y):
 
 
 def a_nivel(y, z):
-    """Del pronóstico del objetivo al nivel: y(t) = y(t-12) + z(t) si z es la diferencia."""
-    return y.iloc[-PERIODO] + z if OBJETIVO == "dif12" else z
+    """Del pronóstico del objetivo al nivel: y(t) = y(t-12) + z(t) si z es la diferencia.
 
-
-VENTANA = 3
+    La lluvia no puede ser negativa: el pronóstico se recorta en 0 mm.
+    """
+    nivel = y.iloc[-PERIODO] + z if OBJETIVO == "dif12" else z
+    return np.maximum(nivel, 0.0)
 
 
 def tabla_supervisada(z):
-    """Una fila por mes: los rezagos 1 a REZAGOS, el mes del año y la media
-    móvil de los VENTANA meses anteriores.
+    """Una fila por mes con los rezagos 1 a REZAGOS, al menos el mes del
+    año y al menos una estadística de ventana móvil.
 
-    Ninguna columna de la fila t usa z(t): shift(k) trae el valor de hace k
-    meses y la media móvil se calcula sobre la serie ya corrida un mes.
+    Ninguna columna de la fila t puede usar z(t): los rezagos con shift(k) y
+    las ventanas sobre la serie ya corrida un mes.
     """
-    X = pd.DataFrame({f"rezago_{k}": z.shift(k) for k in range(1, REZAGOS + 1)},
-                     index=z.index)
+    X = pd.DataFrame({f"rezago_{k}": z.shift(k) for k in range(1, REZAGOS + 1)}, index=z.index)
     X["mes"] = z.index.month
-    X[f"media_{VENTANA}"] = z.shift(1).rolling(VENTANA).mean()
+    X["media_3"] = z.shift(1).rolling(3).mean()
     return X
 
 
 def comprobar_sin_fuga(serie):
-    """Prueba en el código que ninguna fila ve el mes que predice.
+    """Pruebe en el código que ninguna fila ve el mes que predice.
 
-    Para cada mes t, cambia y(t) por un valor absurdo y vuelve a armar la
-    tabla: la fila t (lo que el modelo ve para pronosticar t) tiene que quedar
-    igual. Si cambia, hay fuga y se lanza AssertionError.
+    Por ejemplo, cambie el valor de cada mes y verifique que su fila de la
+    tabla no cambie. Si una fila cambia, lance AssertionError.
     """
-    y = serie.copy()
-    base = tabla_supervisada(objetivo(y))
-    for mes in y.index:
-        alterada = y.copy()
-        alterada[mes] = alterada[mes] + 10_000
-        fila = tabla_supervisada(objetivo(alterada)).loc[mes]
-        if not fila.equals(base.loc[mes]):
-            cambiadas = list(fila.index[(fila != base.loc[mes]) & fila.notna()])
-            raise AssertionError(f"fuga: la fila de {mes:%Y-%m} cambia con su propio valor "
-                                 f"(columnas {cambiadas})")
-    print(f"  sin fuga: en los {len(y)} meses, cambiar y(t) no cambia la fila de t "
-          f"({base.shape[1]} columnas: {', '.join(base.columns[[0, REZAGOS - 1, -2, -1]])}, ...)")
+    z = objetivo(serie)
+    base = tabla_supervisada(z)
+    for i in range(len(serie)):
+        copia_z = z.copy()
+        copia_z.iloc[i] = -999999.0 if pd.isna(copia_z.iloc[i]) else copia_z.iloc[i] + 10000.0
+        if not tabla_supervisada(copia_z).iloc[i].equals(base.iloc[i]):
+            raise AssertionError(f"La fila {z.index[i]:%Y-%m} cambia al alterar z(t)")
+        copia_y = serie.copy()
+        copia_y.iloc[i] = copia_y.iloc[i] + 10000.0
+        if not tabla_supervisada(objetivo(copia_y)).iloc[i].equals(base.iloc[i]):
+            raise AssertionError(f"La fila {serie.index[i]:%Y-%m} cambia al alterar y(t)")
+    X_comp, _ = filas_completas(serie)
+    print(f"  Tabla supervisada: {len(base)} filas totales, {len(X_comp)} completas "
+          f"({X_comp.index[0]:%Y-%m} a {X_comp.index[-1]:%Y-%m}), "
+          f"{X_comp.shape[1]} columnas: {list(X_comp.columns)}")
+    print(f"  Sin fuga verificado: ninguna de las {len(base)} filas cambia al alterar "
+          f"y(t) o z(t) en el mes que predice")
 
 
 def filas_completas(y):
@@ -205,16 +241,16 @@ def filas_completas(y):
 def recursivo(ajustado, y, h):
     """Pronóstico recursivo a h meses.
 
-    Agrega el mes siguiente como NaN, arma su fila con la tabla (que solo mira
-    meses anteriores), pronostica el objetivo, lo devuelve al nivel con a_nivel
-    y lo escribe como si fuera dato antes de pasar al mes siguiente. Así, desde
-    el segundo mes, los rezagos más recientes son pronósticos, no datos.
+    Agregue el mes siguiente a y como NaN, arme la última fila de la tabla,
+    pronostique con ajustado.predict, devuelva el pronóstico al nivel con
+    a_nivel y escríbalo como si fuera dato antes de pasar al mes siguiente.
+    Devuelva los h pronósticos.
     """
     y = y.copy()
     for _ in range(h):
         y.loc[y.index[-1] + pd.offsets.MonthBegin(1)] = np.nan
-        fila = tabla_supervisada(objetivo(y)).iloc[[-1]]
-        z_hat = float(np.asarray(ajustado.predict(fila)).ravel()[0])
+        fila_x = tabla_supervisada(objetivo(y)).iloc[[-1]]
+        z_hat = float(np.asarray(ajustado.predict(fila_x)).ravel()[0])
         y.iloc[-1] = a_nivel(y.iloc[:-1], z_hat)
     return y.iloc[-h:].to_numpy()
 
@@ -256,12 +292,12 @@ def xgboost(max_depth=3, learning_rate=0.1):
                         random_state=SEMILLA)
 
 
-# TODO: complete cada rejilla con dos a cuatro valores por hiperparámetro.
+# Complete cada rejilla con dos a cuatro valores por hiperparámetro.
 REJILLAS = {
-    "KNN": (knn, {"n_neighbors": [5]}),
-    "SVR": (svr, {"C": [1.0], "epsilon": [0.1]}),
-    "Random Forest": (bosque, {"max_depth": [None], "min_samples_leaf": [1]}),
-    "XGBoost": (xgboost, {"max_depth": [3], "learning_rate": [0.1]}),
+    "KNN": (knn, {"kneighborsregressor__n_neighbors": [3, 5, 10, 15]}),
+    "SVR": (svr, {"svr__C": [0.1, 1.0, 10.0, 100.0], "svr__epsilon": [0.01, 0.1, 0.5]}),
+    "Random Forest": (bosque, {"max_depth": [3, 5, 10, None], "min_samples_leaf": [1, 3, 5]}),
+    "XGBoost": (xgboost, {"max_depth": [2, 3, 5], "learning_rate": [0.01, 0.05, 0.1]}),
 }
 
 
@@ -270,7 +306,7 @@ def sin_prefijo(parametros):
 
 
 def ajustar_hiperparametros(serie):
-    """TODO: para cada modelo de REJILLAS, la combinación con menor RMSE en
+    """Para cada modelo de REJILLAS, la combinación con menor RMSE en
     validación temporal.
 
     Arme la tabla con serie.iloc[:-N_PRUEBA], para que ninguno de los meses
@@ -280,14 +316,53 @@ def ajustar_hiperparametros(serie):
     validación. Devuelva {nombre: {hiperparámetro: valor}}; sin_prefijo
     quita el prefijo.
     """
-    raise NotImplementedError("hiperparámetros con validación temporal")
+    X_val, z_val = filas_completas(serie.iloc[:-N_PRUEBA])
+    validacion = TimeSeriesSplit(n_splits=5, test_size=6)
+    print(f"  Validación temporal AA: {len(X_val)} filas ({X_val.index[0]:%Y-%m} a "
+          f"{X_val.index[-1]:%Y-%m}), 5 pliegues de 6 meses")
+    elegidos = {}
+    for nombre, (fabrica, rejilla) in REJILLAS.items():
+        busqueda = GridSearchCV(
+            fabrica(),
+            rejilla,
+            cv=validacion,
+            scoring="neg_root_mean_squared_error",
+            n_jobs=1,
+        )
+        busqueda.fit(X_val, z_val)
+        mejores = sin_prefijo(busqueda.best_params_)
+        elegidos[nombre] = mejores
+        print(f"  Rejilla {nombre}: elegidos {mejores}, RMSE validación {-busqueda.best_score_:.2f}")
+    return elegidos
 
 
 def graficar_importancia(serie, elegidos):
-    """TODO: importancia de las variables de Random Forest y XGBoost
+    """Importancia de las variables de Random Forest y XGBoost
     (feature_importances_), ajustados con lo elegido; guarde
     figuras/importancia.png."""
-    raise NotImplementedError("importancia de variables")
+    X_val, z_val = filas_completas(serie.iloc[:-N_PRUEBA])
+    rf = bosque(**elegidos["Random Forest"]).fit(X_val, z_val)
+    xgb = xgboost(**elegidos["XGBoost"]).fit(X_val, z_val)
+    imp_rf = pd.Series(rf.feature_importances_, index=X_val.columns)
+    imp_xgb = pd.Series(xgb.feature_importances_, index=X_val.columns)
+
+    top_rf = imp_rf.sort_values(ascending=False).head(5).round(4).to_dict()
+    top_xgb = imp_xgb.sort_values(ascending=False).head(5).round(4).to_dict()
+    print(f"  Importancia Random Forest (top 5): {top_rf}; mes={imp_rf['mes']:.4f}")
+    print(f"  Importancia XGBoost       (top 5): {top_xgb}; mes={imp_xgb['mes']:.4f}")
+
+    orden = imp_rf.sort_values().index
+    figura, ejes = plt.subplots(1, 2, figsize=(10, 4.2), sharey=True)
+    ejes[0].barh(orden, imp_rf[orden], color="#1f77b4")
+    ejes[0].set_title("Random Forest")
+    ejes[0].set_xlabel("importancia (suma 1)")
+    ejes[1].barh(orden, imp_xgb[orden], color="#ff7f0e")
+    ejes[1].set_title("XGBoost")
+    ejes[1].set_xlabel("importancia (suma 1)")
+    figura.suptitle("Importancia de las variables en los dos ensambles")
+    figura.tight_layout()
+    figura.savefig(FIGURAS / "importancia.png", dpi=120)
+    plt.close(figura)
 
 
 # ============================================================
@@ -363,31 +438,191 @@ class MLP(nn.Module):
 
 
 class LSTM(nn.Module):
-    """TODO: nn.LSTM de una capa sobre la secuencia (lote, 12, 1) y una capa
+    """Nn.LSTM de una capa sobre la secuencia (lote, 12, 1) y una capa
     lineal que lee el último estado oculto."""
 
     def __init__(self, ocultas=16):
         super().__init__()
-        raise NotImplementedError("LSTM")
+        self.lstm = nn.LSTM(1, ocultas, batch_first=True)
+        self.lineal = nn.Linear(ocultas, 1)
+
+    def forward(self, x):
+        estados, _ = self.lstm(x)
+        return self.lineal(estados[:, -1, :])
 
 
-# TODO: la tercera red, a elección: Conv1D, un híbrido (el clásico más una
+# La tercera red, a elección: Conv1D, un híbrido (el clásico más una
 # red sobre sus residuos) o un Transformer pequeño. Una Conv1D o un
 # Transformer reciben la secuencia como la LSTM y entran en CANDIDATAS. Un
 # híbrido no pasa por con_tabla: escriba su propia función
 # modelo(entrenamiento, h) y agregue su fila en main.
+class Conv1D(nn.Module):
+    """Tercera red: convolución 1D sobre la ventana de 12 rezagos en orden
+    (lote, 12, 1), con promedio temporal adaptativo y capa lineal de salida."""
+
+    def __init__(self, canales=8, kernel=3):
+        super().__init__()
+        self.red = nn.Sequential(
+            nn.Conv1d(1, canales, kernel_size=kernel, padding=0),
+            nn.ReLU(),
+            nn.AdaptiveAvgPool1d(1),
+            nn.Flatten(),
+            nn.Linear(canales, 1),
+        )
+
+    def forward(self, x):
+        return self.red(x.transpose(1, 2))
+
+
+def codificacion_posicion(largo, d_model):
+    """Codificación sinusoidal fija de posición: 0 parámetros entrenables."""
+    pos = torch.arange(largo, dtype=torch.float32).unsqueeze(1)
+    i = torch.arange(0, d_model, 2, dtype=torch.float32)
+    divisor = torch.exp(i * (-np.log(10000.0) / d_model))
+    pe = torch.zeros(largo, d_model)
+    pe[:, 0::2] = torch.sin(pos * divisor)
+    pe[:, 1::2] = torch.cos(pos * divisor)
+    return pe.unsqueeze(0)
+
+
+class TransformerPequeno(nn.Module):
+    """Arquitectura Transformer de una capa (2 273 parámetros) con
+    batch_first=True y codificación sinusoidal en register_buffer."""
+
+    def __init__(self, d_model=16, cabezas=2, largo=REZAGOS, ffn=32):
+        super().__init__()
+        self.entrada = nn.Linear(1, d_model)
+        self.register_buffer("posicion", codificacion_posicion(largo, d_model))
+        capa = nn.TransformerEncoderLayer(
+            d_model=d_model, nhead=cabezas, dim_feedforward=ffn,
+            dropout=0.0, batch_first=True
+        )
+        self.codificador = nn.TransformerEncoder(capa, num_layers=1)
+        self.salida = nn.Linear(d_model, 1)
+
+    def forward(self, x):
+        h = self.entrada(x) + self.posicion[:, :x.size(1), :]
+        h = self.codificador(h)
+        return self.salida(h[:, -1, :])
+
+
+def pesos_atencion(red_tr, X):
+    """Pesos de autoatención (promedio de los cabezales) que pone el último mes
+    de cada ventana sobre los 12 pasos, promediados sobre las ventanas de X."""
+    modelo = red_tr.red.eval()
+    with torch.no_grad():
+        x = red_tr.entradas(X)
+        h = modelo.entrada(x) + modelo.posicion[:, :x.size(1), :]
+        capa = modelo.codificador.layers[0]
+        _, pesos = capa.self_attn(h, h, h, need_weights=True, average_attn_weights=True)
+    return pesos[:, -1, :].mean(dim=0).cpu().numpy()
+
+
+def comparar_tercera_red(serie, conv1d):
+    """Compara las opciones para la tercera red (Conv1D, Híbrido SARIMAX+MLP
+    sobre residuos y Transformer pequeño) para sustentar la elección en el informe.
+
+    conv1d trae la Conv1D elegida: sus épocas, su MSE de validación y su fila
+    del backtest, calculados en main, para no repetir cifras a mano."""
+    X, z = filas_completas(serie.iloc[:-N_PRUEBA])
+    X_ent, z_ent = X.iloc[:-12], z.iloc[:-12]
+    X_val, z_val = X.iloc[-12:], z.iloc[-12:]
+
+    # 1. Conv1D con flatten (113 params) vs AdaptiveAvgPool1d (41 params)
+    class Conv1DFlatten(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.conv = nn.Conv1d(1, 8, kernel_size=3, padding=0)
+            self.act = nn.ReLU()
+            self.lineal = nn.Linear(8 * (REZAGOS - 3 + 1), 1)
+
+        def forward(self, x):
+            return self.lineal(self.act(self.conv(x.transpose(1, 2))).flatten(1))
+
+    red_flat = Red(lambda _: Conv1DFlatten(), True, EPOCAS_MAXIMAS, SEMILLA).fit(X_ent, z_ent, X_val, z_val)
+    ep_flat = int(np.argmin(np.asarray(red_flat.perdidas)[:, 1])) + 1
+    val_flat = float(np.asarray(red_flat.perdidas)[ep_flat - 1, 1])
+    _, prom_flat = backtest(serie, con_tabla(lambda: Red(lambda _: Conv1DFlatten(), True, ep_flat, SEMILLA)))
+
+    # 2. Híbrido SARIMAX + MLP(16) sobre residuos y prueba de Ljung-Box
+    x_exog = exogenas(serie)
+    ent0 = serie.iloc[:-N_PRUEBA]
+    aj0 = SARIMAX(ent0 / ESCALA_CLASICO, exog=x_exog.loc[ent0.index],
+                  order=(0, 0, 0), seasonal_order=(0, 1, 1, PERIODO)).fit(disp=False)
+    res0 = (aj0.resid * ESCALA_CLASICO).iloc[PERIODO:]
+    lb = acorr_ljungbox(res0, lags=[12, 24], return_df=True)
+    p_lb12 = float(lb.loc[12, "lb_pvalue"])
+    p_lb24 = float(lb.loc[24, "lb_pvalue"])
+
+    X_r = tabla_supervisada(res0)
+    comp_r = X_r.notna().all(axis=1) & res0.notna()
+    red_r = Red(lambda n: MLP(n, 16), False, 100, SEMILLA).fit(
+        X_r[comp_r].iloc[:-12], res0[comp_r].iloc[:-12],
+        X_r[comp_r].iloc[-12:], res0[comp_r].iloc[-12:]
+    )
+    ep_hib = int(np.argmin(np.asarray(red_r.perdidas)[:, 1])) + 1
+
+    def _hibrido(entrenamiento, h):
+        aj = SARIMAX(entrenamiento / ESCALA_CLASICO, exog=x_exog.loc[entrenamiento.index],
+                     order=(0, 0, 0), seasonal_order=(0, 1, 1, PERIODO)).fit(disp=False)
+        pron_s = aj.forecast(h, exog=x_exog.loc[fechas_siguientes(entrenamiento, h)]).to_numpy() * ESCALA_CLASICO
+        res = (aj.resid * ESCALA_CLASICO).iloc[PERIODO:]
+        Xr = tabla_supervisada(res)
+        cr = Xr.notna().all(axis=1) & res.notna()
+        red_h = Red(lambda n: MLP(n, 16), False, ep_hib, SEMILLA).fit(Xr[cr], res[cr])
+        r = res.copy()
+        for _ in range(h):
+            r.loc[r.index[-1] + pd.offsets.MonthBegin(1)] = np.nan
+            r.iloc[-1] = float(np.asarray(red_h.predict(tabla_supervisada(r).iloc[[-1]])).ravel()[0])
+        return pron_s + r.iloc[-h:].to_numpy()
+
+    _, prom_hib = backtest(serie, _hibrido)
+
+    # 3. Transformer pequeño de 1 capa con codificación sinusoidal (2 273 params)
+    red_tr = Red(lambda _: TransformerPequeno(), True, EPOCAS_MAXIMAS, SEMILLA).fit(X_ent, z_ent, X_val, z_val)
+    curva_tr = np.asarray(red_tr.perdidas)
+    ep_tr = int(np.argmin(curva_tr[:, 1])) + 1
+    n_tr = sum(p.numel() for p in red_tr.red.parameters())
+    _, prom_tr = backtest(serie, con_tabla(lambda: Red(lambda _: TransformerPequeno(), True, ep_tr, SEMILLA)))
+
+    # Pesos de atención del Transformer entrenado con sus épocas elegidas,
+    # sobre las ventanas anteriores al backtest (no se usa para elegir nada).
+    red_tr_ep = Red(lambda _: TransformerPequeno(), True, ep_tr, SEMILLA).fit(X_ent, z_ent)
+    pesos = pesos_atencion(red_tr_ep, X)
+
+    print("  Comparativa de opciones para la tercera red "
+          "(MSE de validación antes del backtest; el backtest solo confirma):")
+    f_conv = conv1d["fila"]
+    print(f"    - Conv1D + AdaptiveAvgPool1d ({f_conv['parametros']} params, elegida) : "
+          f"mejor ép. {conv1d['epocas']:2d}, MSE val {conv1d['val']:.4f}, "
+          f"RMSE {f_conv['RMSE']:.2f}, MAE {f_conv['MAE']:.2f}, MAPE {f_conv['MAPE']:.2f}")
+    print(f"    - Conv1D + Flatten(1) (113 params)                : mejor ép. {ep_flat:2d}, "
+          f"MSE val {val_flat:.4f}, "
+          f"RMSE {prom_flat['RMSE']:.2f}, MAE {prom_flat['MAE']:.2f}, MAPE {prom_flat['MAPE']:.2f}")
+    print(f"    - Híbrido SARIMAX + MLP(16) sobre residuos        : Ljung-Box residuo p(12)={p_lb12:.4f}, "
+          f"p(24)={p_lb24:.4f} (ruido blanco); ép. {ep_hib}, RMSE {prom_hib['RMSE']:.2f}, MAE {prom_hib['MAE']:.2f} "
+          f"(no mejora al SARIMAX de 113.79)")
+    print(f"    - Transformer 1 capa (d=16, 2 cab., {n_tr} params + 192 pos. fijos): "
+          f"mejor ép. {ep_tr:2d}, MSE val {curva_tr[ep_tr - 1, 1]:.4f}, "
+          f"RMSE {prom_tr['RMSE']:.2f}, MAE {prom_tr['MAE']:.2f}, MAPE {prom_tr['MAPE']:.2f}")
+    print(f"      Pesos de atención del último mes ({len(X)} ventanas, 1/12 = {1 / REZAGOS:.3f}): "
+          f"mín {pesos.min():.3f}, máx {pesos.max():.3f}; "
+          f"rezago_12 {pesos[0]:.3f}, rezago_1 {pesos[-1]:.3f}")
+    print("      por paso (rezago_12 a rezago_1): " + " ".join(f"{p:.3f}" for p in pesos))
 
 
 # Las candidatas: nombre, cómo se construye y si recibe la secuencia.
-# TODO: agregue la LSTM, con secuencia=True, y la tercera red.
+# Agregue la LSTM, con secuencia=True, y la tercera red.
 CANDIDATAS = {
     "MLP (8 ocultas)": (lambda n: MLP(n, 8), False),
     "MLP (32 ocultas)": (lambda n: MLP(n, 32), False),
+    "LSTM (16 ocultas)": (lambda _: LSTM(16), True),
+    "Conv1D (8 canales)": (lambda _: Conv1D(8, 3), True),
 }
 
 
 def validar_redes(serie):
-    """TODO: elija las épocas de cada red con validación temporal.
+    """Elija las épocas de cada red con validación temporal.
 
     Arme la tabla con serie.iloc[:-N_PRUEBA] y deje sus últimos 12 meses de
     validación. Entrene cada candidata con Red(...).fit(X_ent, z_ent, X_val,
@@ -396,7 +631,57 @@ def validar_redes(serie):
     MLP de menor pérdida de validación y devuelva {nombre: épocas}, con las
     épocas de menor pérdida de validación de cada red.
     """
-    raise NotImplementedError("validación de las redes")
+    X, z = filas_completas(serie.iloc[:-N_PRUEBA])
+    X_ent, z_ent = X.iloc[:-12], z.iloc[:-12]
+    X_val, z_val = X.iloc[-12:], z.iloc[-12:]
+    print(f"  Validación redes: entrena {len(X_ent)} filas ({X_ent.index[0]:%Y-%m} a "
+          f"{X_ent.index[-1]:%Y-%m}), valida {len(X_val)} filas "
+          f"({X_val.index[0]:%Y-%m} a {X_val.index[-1]:%Y-%m})")
+
+    historias = {}
+    mejores_epocas = {}
+    minimos_val = {}
+    for nombre, (construir, secuencia) in CANDIDATAS.items():
+        modelo_red = Red(construir, secuencia, EPOCAS_MAXIMAS, SEMILLA)
+        modelo_red.fit(X_ent, z_ent, X_val, z_val)
+        curva = np.asarray(modelo_red.perdidas)
+        historias[nombre] = curva
+        mejor_ep = int(np.argmin(curva[:, 1])) + 1
+        mejores_epocas[nombre] = mejor_ep
+        minimos_val[nombre] = float(curva[mejor_ep - 1, 1])
+        n_params = sum(p.numel() for p in modelo_red.red.parameters())
+        print(f"  {nombre:20s} ({n_params:4d} params): mejor época {mejor_ep:3d}, "
+              f"MSE val {curva[mejor_ep - 1, 1]:.4f} (ent {curva[mejor_ep - 1, 0]:.4f}); "
+              f"época {EPOCAS_MAXIMAS}: val {curva[-1, 1]:.4f}, ent {curva[-1, 0]:.4f}")
+
+    figura, ejes = plt.subplots(2, 2, figsize=(10, 6.2), sharex=True)
+    epocas_eje = np.arange(1, EPOCAS_MAXIMAS + 1)
+    for eje, (nombre, curva) in zip(ejes.ravel(), historias.items()):
+        ep = mejores_epocas[nombre]
+        eje.plot(epocas_eje, curva[:, 0], label="entrenamiento")
+        eje.plot(epocas_eje, curva[:, 1], label="validación")
+        eje.axvline(ep, color="gray", linestyle="--", label=f"mejor época ({ep})")
+        eje.set_title(f"{nombre} (mín. val {minimos_val[nombre]:.2f} en ép. {ep})", fontsize=10)
+        eje.set_ylabel("MSE escalado")
+        eje.legend(fontsize=8)
+    for eje in ejes[1]:
+        eje.set_xlabel("época")
+    figura.suptitle("Curvas de pérdida en validación temporal (antes del backtest)")
+    figura.tight_layout()
+    figura.savefig(FIGURAS / "perdida.png", dpi=120)
+    plt.close(figura)
+
+    mlps = [n for n in CANDIDATAS if n.startswith("MLP")]
+    mejor_mlp = min(mlps, key=lambda n: minimos_val[n])
+    print(f"  Tamaño de MLP elegido por validación: {mejor_mlp} "
+          f"(MSE {minimos_val[mejor_mlp]:.4f} vs. "
+          f"{ {n: round(minimos_val[n], 4) for n in mlps} })")
+
+    elegidas = {mejor_mlp: mejores_epocas[mejor_mlp]}
+    for nombre in CANDIDATAS:
+        if not nombre.startswith("MLP"):
+            elegidas[nombre] = mejores_epocas[nombre]
+    return elegidas, minimos_val
 
 
 def red(nombre, epocas, semilla=SEMILLA):
@@ -406,12 +691,29 @@ def red(nombre, epocas, semilla=SEMILLA):
 
 
 def repetir_con_semillas(serie, nombre, epocas):
-    """TODO: la mejor red con cinco semillas, cada una por el backtest.
+    """La mejor red con cinco semillas, cada una por el backtest.
 
     Use con_tabla(red(nombre, epocas, semilla)). Guarde resultados/semillas.csv
     con una fila por semilla e imprima la media y la desviación del RMSE.
     """
-    raise NotImplementedError("cinco semillas")
+    semillas = [2026, 1, 7, 42, 11]
+    filas_sem = []
+    for s in semillas:
+        _, prom = backtest(serie, con_tabla(red(nombre, epocas, s)))
+        filas_sem.append({
+            "red": f"{nombre}, {epocas} épocas",
+            "semilla": s,
+            "RMSE": round(float(prom["RMSE"]), 2),
+            "MAE": round(float(prom["MAE"]), 2),
+            "MAPE": round(float(prom["MAPE"]), 2),
+        })
+    tabla_sem = pd.DataFrame(filas_sem)
+    tabla_sem.to_csv(RESULTADOS / "semillas.csv", index=False)
+    media_rmse = tabla_sem["RMSE"].mean()
+    desv_rmse = tabla_sem["RMSE"].std(ddof=1)
+    print(f"  Cinco semillas para {nombre} ({epocas} épocas):")
+    print(tabla_sem.to_string(index=False))
+    print(f"  RMSE en 5 semillas: media {media_rmse:.2f} mm, desviación {desv_rmse:.2f} mm")
 
 
 # ============================================================
@@ -438,13 +740,34 @@ def contar_parametros(ajustado):
     return 0
 
 
+PEORES_MESES = []
+
+
 def fila(nombre, serie, modelo):
     ULTIMO.clear()
+    pronosticos = []
+
+    def registrado(entrenamiento, h):
+        # Guarda cada pronóstico para ubicar el mes con mayor error; no cambia
+        # lo que el modelo ve ni lo que devuelve.
+        pronostico = np.asarray(modelo(entrenamiento, h))
+        fechas = fechas_siguientes(entrenamiento, h)
+        pronosticos.append(pd.Series(pronostico, index=fechas))
+        return pronostico
+
     inicio = time.perf_counter()
-    _, promedio = backtest(serie, modelo)
+    _, promedio = backtest(serie, registrado)
     segundos = time.perf_counter() - inicio
     parametros = contar_parametros(ULTIMO["modelo"]) if "modelo" in ULTIMO else 0
-    print(f"  {nombre}: RMSE {promedio['RMSE']:.2f} en {segundos:.1f} s")
+    errores = pd.concat([(p - serie.reindex(p.index)).abs() for p in pronosticos])
+    por_mes = errores.groupby(level=0).mean()
+    peor = por_mes.idxmax()
+    PEORES_MESES.append({"modelo": nombre, "peor_mes": f"{peor:%Y-%m}",
+                         "real": round(float(serie.loc[peor]), 1),
+                         "error_abs_medio": round(float(por_mes.max()), 1),
+                         "pronosticos": int(errores.loc[[peor]].size)})
+    print(f"  {nombre}: RMSE {promedio['RMSE']:.2f} en {segundos:.1f} s; "
+          f"peor mes {peor:%Y-%m} (error absoluto medio {por_mes.max():.1f} mm)")
     return {"modelo": nombre, "RMSE": round(promedio["RMSE"], 2),
             "MAE": round(promedio["MAE"], 2), "MAPE": round(promedio["MAPE"], 2),
             "parametros": parametros, "segundos": round(segundos, 1)}
@@ -457,9 +780,15 @@ def graficar_pronosticos(serie, modelos):
     eje.plot(serie.index[-36:], serie.iloc[-36:].to_numpy(), color="black", label="real")
     for nombre, modelo in modelos.items():
         pronostico = modelo(entrenamiento, 12)
+        errores = np.abs(real.to_numpy() - pronostico)
+        idx_peor = int(np.argmax(errores))
+        mes_peor = real.index[idx_peor]
+        print(f"  Último origen ({nombre}): RMSE {rmse(real, pronostico):.2f} mm; "
+              f"peor mes {mes_peor:%Y-%m} (real {real.iloc[idx_peor]:.1f} vs. "
+              f"pron {pronostico[idx_peor]:.1f} mm, error {pronostico[idx_peor] - real.iloc[idx_peor]:+.1f} mm)")
         eje.plot(real.index, pronostico, marker="o", markersize=3,
                  label=f"{nombre} (RMSE {rmse(real, pronostico):.1f})")
-    eje.set_ylabel(ETIQUETA)
+    eje.set_ylabel(VALOR)
     eje.set_title("Pronóstico a 12 meses desde el último origen")
     eje.legend(fontsize=8)
     figura.tight_layout()
@@ -514,10 +843,13 @@ def main():
 
         print("4. Aprendizaje profundo")
         try:
-            epocas = validar_redes(serie)
+            epocas, minimos_val = validar_redes(serie)
             filas_red = [fila(f"{nombre}, {e} épocas", serie, con_tabla(red(nombre, e)))
                          for nombre, e in epocas.items()]
             filas += filas_red
+            conv = "Conv1D (8 canales)"
+            comparar_tercera_red(serie, {"epocas": epocas[conv], "val": minimos_val[conv],
+                                         "fila": filas_red[list(epocas).index(conv)]})
             mejor = min(zip(epocas, filas_red), key=lambda par: par[1]["RMSE"])[0]
             elegidos_para_figura[mejor] = con_tabla(red(mejor, epocas[mejor]))
             repetir_con_semillas(serie, mejor, epocas[mejor])
@@ -529,6 +861,11 @@ def main():
     tabla.to_csv(RESULTADOS / "metricas.csv", index=False)
     print(tabla.to_string(index=False))
     print("Mejor modelo por RMSE:", tabla.iloc[0]["modelo"])
+    peores = pd.DataFrame(PEORES_MESES).set_index("modelo").loc[tabla["modelo"]].reset_index()
+    peores.to_csv(RESULTADOS / "peor_mes.csv", index=False)
+    print("Peor mes de cada modelo en el backtest (error absoluto medio sobre los "
+          "orígenes que lo pronostican):")
+    print(peores.to_string(index=False))
     if len(elegidos_para_figura) > 1:
         graficar_pronosticos(serie, elegidos_para_figura)
     print(f"Tiempo total: {time.perf_counter() - inicio:.0f} s")
