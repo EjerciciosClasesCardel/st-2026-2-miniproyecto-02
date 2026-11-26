@@ -6,11 +6,11 @@ La serie corresponde a la **precipitación mensual acumulada ($\text{mm/mes}$)**
 
 ![La serie](../figuras/serie.png)
 
-Del Miniproyecto 1 se traslada el mejor modelo de su tabla de métricas: **`SARIMAX(0, 0, 0)(0, 1, 1, 12) + exógenas`**, ajustado sobre la serie escalada $y_t / 100$ con diferenciación estacional ($d = 0,\ D = 1,\ m = 12$), un término de media móvil estacional ($Q = 1$) y el número de días del calendario del mes ($x_t = \text{dias\_mes}_t$, conocido con certeza de antemano sin fuga) como regresor exógeno:
+Del Miniproyecto 1 se traslada su mejor modelo, el **`SARIMAX(0, 0, 0)(0, 1, 1, 12) + exógenas`**. **En palabras: la lluvia de un mes se pronostica a partir de la del mismo mes del año anterior, descontando la mayor parte de lo que ese mes tuvo de inusual, con un ajuste por el número de días del mes.** En ecuación:
 
-$$(1 - B^{12})\bigl(y_t - \beta\,x_t\bigr) = (1 + \Theta_1 B^{12})\,\varepsilon_t, \qquad \text{es decir,} \qquad y_t = y_{t-12} + \beta\,(x_t - x_{t-12}) + \varepsilon_t + \Theta_1\,\varepsilon_{t-12},$$
+$$y_t = y_{t-12} + \beta\,(x_t - x_{t-12}) + \varepsilon_t + \Theta_1\,\varepsilon_{t-12},$$
 
-donde en toda la serie $\Theta_1 = -0.853$, $\beta = -100.9\text{ mm/día}$ y se estiman **`3` parámetros** ($\beta$, $\Theta_1$ y $\sigma^2$). Al volver a pasar por el *backtest* común de `comun.py` (`13` orígenes desde `2024-02` hasta `2025-02`, horizonte $h = 1, \dots, 12$ sobre los últimos `24` meses `2024-03` a `2026-02`), sus métricas **coinciden exactamente con las del Miniproyecto 1**:
+donde $y_t$ es la lluvia del mes, $x_t$ sus días del calendario (se conocen de antemano, así que no hay fuga) y $\varepsilon_t$ el error del pronóstico. Con toda la serie, $\Theta_1 = -0.853$: el modelo descuenta el 85 % del error de hace un año y se queda cerca de lo normal para ese mes. El ajuste por días ($\beta = -100.9$ mm por día de diferencia) solo actúa en febreros bisiestos y en el febrero siguiente, porque los demás meses tienen los mismos días que el año anterior. Se estiman **`3` parámetros** ($\beta$, $\Theta_1$ y la varianza del error); el ajuste se hace sobre la lluvia dividida entre 100, solo por estabilidad numérica. Al pasar por el mismo *backtest* de `comun.py` (`13` orígenes desde `2024-02` hasta `2025-02`, de 1 a 12 meses adelante, sobre los últimos `24` meses, `2024-03` a `2026-02`), sus métricas **coinciden exactamente con las del Miniproyecto 1**:
 
 | Modelo clásico de referencia | RMSE (mm) | MAE (mm) | MAPE (%) | Parámetros | Segundos |
 |---|---|---|---|---|---|
