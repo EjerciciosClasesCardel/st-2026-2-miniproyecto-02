@@ -22,41 +22,39 @@ No hubo ningún cambio en las métricas al trasladarlo (`RMSE = 113.79 mm`, `MAE
 
 ## 2. La tabla supervisada
 
-Para transformar la serie univariada en un problema de aprendizaje supervisado $(X, z)$, elegimos **`OBJETIVO = "dif12"`**, de modo que cada modelo aprende la diferencia estacional con el mismo mes del año anterior:
+**Por qué una tabla.** Los modelos de aprendizaje automático y las redes aprenden de forma **supervisada**: necesitan ejemplos que traigan las entradas ($X$) y la respuesta correcta ($y$). Una serie de tiempo es una sola columna, sin entradas. Por eso fabricamos las entradas con el pasado de la misma serie: **cada fila es un mes, sus columnas son lo que se sabía antes de ese mes y la respuesta es lo que pasó ese mes.** Así, cada mes de la historia se vuelve un ejemplo resuelto del que el modelo aprende. Usamos el mismo diseño de tabla de la sesión 7 del curso.
 
-$$z_t = \nabla_{12} y_t = y_t - y_{t-12}, \qquad \text{y reconstruye el nivel mediante} \qquad \hat{y}_t = y_{t-12} + \hat{z}_t.$$
+**Qué aprenden: la diferencia con el año anterior (`OBJETIVO = "dif12"`).** En lugar de la lluvia, cada modelo aprende cuánto cambió respecto al mismo mes del año anterior. Después se le suma ese mes para volver a milímetros:
 
-Esta decisión mantiene coherencia con la prueba ADF del Miniproyecto 1 y del Taller 1 ($d = 0,\ D = 1$: la serie original con tendencia tiene $p = 0.2092$, mientras que $\nabla_{12} y_t$ es estacionaria con $p = 0.0033$), remueve de entrada el fuerte ciclo anual bimodal de la cuenca de Pance y permite que modelos basados en árboles o vecindades desplacen su rango dinámicamente respecto a $y_{t-12}$ sin quedar truncados por el techo histórico del entrenamiento cuando ocurre un récord pluvial como `2024-04` (`577.0 mm`).
+$$z_t = y_t - y_{t-12}, \qquad \hat y_t = y_{t-12} + \hat z_t.$$
 
-**También probamos `OBJETIVO = "nivel"`** (con el mismo recorte en `0 mm`) y lo descartamos. Con `nivel` los árboles y KNN bajan su RMSE (`XGBoost` `133.45 mm`, `Random Forest` `135.03 mm`, `KNN` `141.18 mm`), porque promedian lluvias que ya vieron y nunca se alejan mucho de lo normal. Pero las redes empeoran (`LSTM` `154.80 mm` con `MAE = 134.88 mm`; `Conv1D` `154.32 mm`), y todos los modelos quedan con un MAPE de entre `66 %` y `93 %`, muy por encima del `43.90 %` del estacional ingenuo: en los meses secos pronostican lluvias de un mes normal. Con `dif12` la mejor red, la `LSTM`, se queda en `MAPE = 44.34 %`, y la elección del modelo final (el SARIMAX) no cambia con ninguno de los dos objetivos.
+Lo escogimos frente a la otra opción de la plantilla, aprender la lluvia directa (`OBJETIVO = "nivel"`), por dos razones:
+- **Quita el ciclo anual.** La prueba ADF del Miniproyecto 1 dice que la serie original no es estacionaria ($p = 0.2092$) y que la diferencia sí lo es ($p = 0.0033$).
+- **Funciona mejor con las redes y en los meses secos.** Con `nivel` los árboles mejoran, porque la lluvia no tiene tendencia y el techo de lo ya visto casi no les estorba. Pero las redes empeoran y todos los modelos se van a un MAPE de `66` a `93 %`. La comparación completa está en la sección 5.
 
-Para cada mes $t$, la función `tabla_supervisada(z)` construye **`14` columnas** que usan exclusivamente información disponible hasta $t - 1$:
-- **`12` rezagos del objetivo (`rezago_1` a `rezago_12`):**
+**Las columnas.** La función `tabla_supervisada` arma **`14` columnas**, todas con datos anteriores al mes que se pronostica:
 
-$$\text{rezago\_}k(t) = z_{t-k} = y_{t-k} - y_{t-k-12}, \qquad k = 1, 2, \dots, 12.$$
+| Columnas | Qué son |
+|---|---|
+| `rezago_1` a `rezago_12` | La diferencia $z$ de cada uno de los 12 meses anteriores |
+| `mes` | El mes del año (1 a 12) |
+| `media_3` | El promedio de $z$ en los 3 meses anteriores |
 
-- **`1` variable de calendario (`mes`):** el mes del año extraído de la fecha del índice,
+Se pierden los dos primeros años: 2015 por la diferencia y 2016 por el rezago 12. Quedan **`110` filas**, de `2017-01` a `2026-02`.
 
-$$\text{mes}(t) = \text{month}(t) \in \{1, 2, \dots, 12\}.$$
-
-- **`1` estadística de ventana móvil (`media_3`):** la media móvil trimestral calculada sobre la serie ya desplazada un mes (`z.shift(1).rolling(3).mean()`),
-
-$$\text{media\_3}(t) = \frac{1}{3}\sum_{j=1}^{3} z_{t-j} = \frac{z_{t-1} + z_{t-2} + z_{t-3}}{3}.$$
-
-De los `134` meses de la serie (`2015-01` a `2026-02`), se pierden `12` meses al calcular $z_t = y_t - y_{t-12}$ (todo `2015`) y otros `12` meses al exigir `rezago_12` completo (todo `2016`), quedando **`110` filas completas** desde `2017-01` hasta `2026-02`.
-
-La función `comprobar_sin_fuga(serie)` verifica en el código la ausencia total de fuga de información (*data leakage*) en dos niveles: recorre cada uno de los `134` meses $i \in \{0, \dots, 133\}$, suma $+10\,000\text{ mm}$ tanto al objetivo $z_i$ como al nivel original $y_i$, recalcula la tabla supervisada completa y comprueba con `.iloc[i].equals(base.iloc[i])` que la fila del mes $i$ no sufre ningún cambio (si alguna cambiara, lanzaría `AssertionError`). Al correr `python miniproyecto.py`, el guion imprime:
+**Prueba de que no hay fuga.** Si una columna usara el dato del mes que se quiere pronosticar, sería como darle al modelo la respuesta dentro del enunciado. La función `comprobar_sin_fuga` lo descarta: le suma 10 000 mm a cada uno de los `134` meses, rehace la tabla y verifica que la fila de ese mismo mes no cambie. Si cambiara, el guion se detendría. Pasa en los 134 meses:
 
 ```text
-Tabla supervisada: 134 filas totales, 110 completas (2017-01 a 2026-02), 14 columnas: ['rezago_1', 'rezago_2', 'rezago_3', 'rezago_4', 'rezago_5', 'rezago_6', 'rezago_7', 'rezago_8', 'rezago_9', 'rezago_10', 'rezago_11', 'rezago_12', 'mes', 'media_3']
+Tabla supervisada: 134 filas totales, 110 completas (2017-01 a 2026-02), 14 columnas: [...]
 Sin fuga verificado: ninguna de las 134 filas cambia al alterar y(t) o z(t) en el mes que predice
 ```
 
-El **pronóstico recursivo a 12 meses (`recursivo`)** y el **escalado por origen** operan dentro de `con_tabla`, cerrando las cuatro posibles fuentes de fuga de información:
-1. **Sin fuga de escalado:** en cada uno de los `13` orígenes del *backtest*, `con_tabla` recibe únicamente la subserie `entrenamiento` hasta la fecha de corte, extrae sus filas completas $(X, z)$ y llama a `ajustado.fit(X, z)`. El escalador (`StandardScaler`) vive **dentro** de cada modelo (`make_pipeline(StandardScaler(), ...)` en `KNN` y `SVR`, y `self.escala_x = StandardScaler().fit(X)` junto con `self.media, self.desv = z.mean(), z.std()` dentro de `Red.fit`), por lo que se ajusta exclusivamente con las filas de entrenamiento de ese origen (de `86` filas en el primer origen `2024-02` a `98` filas en el último origen `2025-02`), sin ver jamás datos posteriores al corte.
-2. **Sin fuga en rezagos ni ventanas (`shift(1)` y `padding=0`):** todas las columnas usan `z.shift(k)` con $k \ge 1$, la media móvil se calcula sobre `z.shift(1).rolling(3).mean()` y la `Conv1D` opera con `padding=0` (causal, sin rellenar con ceros al borde derecho ni centrar el filtro hacia $t + 1$).
-3. **Sin barajar el tiempo ni elegir mirando el *backtest*:** los hiperparámetros y las épocas se eligen antes del primer origen (`serie.iloc[:-24]`) mediante `TimeSeriesSplit(n_splits=5, test_size=6)` y corte temporal de 12 meses (`X.iloc[:-12]` vs. `X.iloc[-12:]`), sin usar `KFold(shuffle=True)` ni tocar los 24 meses de prueba.
-4. **Reconstrucción recursiva paso a paso:** para pronosticar los $h = 12$ meses siguientes ($s = 1, \dots, 12$), `recursivo` agrega a la copia de la serie el mes futuro $T + s$ con `np.nan`, recalcula `tabla_supervisada(objetivo(y)).iloc[[-1]]` para formar la fila de predictores de ese mes, obtiene $\hat{z}_{T+s}$ con `ajustado.predict`, lo devuelve al nivel sumando el mismo mes del año anterior ($\hat{y}_{T+s} = y_{T+s-12} + \hat{z}_{T+s}$) y escribe $\hat{y}_{T+s}$ en la serie como si fuera un dato observado para que alimente `rezago_1`, `rezago_2`, $\dots$ y `media_3` de los meses siguientes.
+**Otros tres cuidados contra la fuga:**
+1. **El escalado se ajusta en cada origen solo con su entrenamiento** (de `86` filas en el primer origen a `98` en el último), dentro de cada modelo.
+2. **Los hiperparámetros se eligen sin mirar el *backtest*:** con `TimeSeriesSplit` sobre los meses anteriores al primer origen, sin barajar el tiempo.
+3. **La `Conv1D` no mira hacia adelante** (`padding=0`).
+
+**El pronóstico a 12 meses es recursivo.** Se pronostica el mes 1. Ese pronóstico se escribe en la serie como si fuera un dato y sirve de rezago para el mes 2, y así hasta el mes 12. Por eso el error crece con el horizonte.
 
 ## 3. Aprendizaje automático
 
@@ -151,6 +149,19 @@ La tabla completa generada por `python miniproyecto.py` en `resultados/metricas.
 | `KNN` | 165.65 | 132.21 | 69.75 | 1 372 | 2.7 |
 
 Los segundos cambian un poco entre corridas y entre equipos; los de esta tabla son de una corrida en CPU, en la que el guion completo tardó `57 s`.
+
+**¿Y si los modelos aprendieran la lluvia directa (`OBJETIVO = "nivel"`)?** Es la otra opción de la plantilla (sección 2). La probamos con los mismos modelos y el mismo *backtest*:
+
+| Modelo | RMSE con `nivel` | RMSE con `dif12` (el usado) |
+|---|---|---|
+| `XGBoost` | 133.45 | 154.27 |
+| `Random Forest` | 135.03 | 158.36 |
+| `KNN` | 141.18 | 165.65 |
+| `LSTM (16 ocultas)` | 154.80 | **137.37** |
+| `Conv1D (8 canales)` | 154.32 | 152.49 |
+| `SARIMAX` (no usa la tabla) | **113.79** | **113.79** |
+
+Con `nivel`, los árboles y KNN mejoran entre 20 y 24 mm: la lluvia no tiene tendencia, así que promediar lluvias ya vistas no los limita, y `XGBoost` (`133.45 mm`) quedaría por delante de la `LSTM`. Pero las redes empeoran (la `LSTM` llega a `MAE = 134.88 mm`) y todos los modelos quedan con un MAPE de entre `66 %` y `93 %`, muy por encima del `43.90 %` del estacional ingenuo: en los meses secos pronostican la lluvia de un mes normal. Como la plantilla usa un solo objetivo para todos los modelos, nos quedamos con `dif12`. **Con ninguno de los dos objetivos el SARIMAX deja de ganar.**
 
 **El peor mes de cada modelo.** El guion guarda en `resultados/peor_mes.csv` el mes del *backtest* con mayor error absoluto medio, tomando todos los orígenes que pronostican ese mes:
 
