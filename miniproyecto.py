@@ -244,12 +244,12 @@ def xgboost(max_depth=3, learning_rate=0.1):
                         random_state=SEMILLA)
 
 
-# TODO: complete cada rejilla con dos a cuatro valores por hiperparámetro.
+# rejilla con dos a cuatro valores por hiperparámetro.
 REJILLAS = {
-    "KNN": (knn, {"n_neighbors": [5]}),
-    "SVR": (svr, {"C": [1.0], "epsilon": [0.1]}),
-    "Random Forest": (bosque, {"max_depth": [None], "min_samples_leaf": [1]}),
-    "XGBoost": (xgboost, {"max_depth": [3], "learning_rate": [0.1]}),
+    "KNN": (knn, {"n_neighbors": [3, 5, 8, 12]}),
+    "SVR": (svr, {"C": [1_000, 10_000, 100_000], "epsilon": [100, 1_000, 2_000]}),
+    "Random Forest": (bosque, {"max_depth": [4, 8, None], "min_samples_leaf": [1, 3, 5]}),
+    "XGBoost": (xgboost, {"max_depth": [2, 3, 5], "learning_rate": [0.03, 0.1, 0.2]}),
 }
 
 
@@ -258,24 +258,43 @@ def sin_prefijo(parametros):
 
 
 def ajustar_hiperparametros(serie):
-    """TODO: para cada modelo de REJILLAS, la combinación con menor RMSE en
-    validación temporal.
-
-    Arme la tabla con serie.iloc[:-N_PRUEBA], para que ninguno de los meses
-    del backtest decida, y busque con GridSearchCV y TimeSeriesSplit. KNN y
-    SVR son make_pipeline: sus claves en la rejilla llevan el prefijo del paso
-    (kneighborsregressor__n_neighbors). Imprima lo elegido y su RMSE de
-    validación. Devuelva {nombre: {hiperparámetro: valor}}; sin_prefijo
-    quita el prefijo.
-    """
-    raise NotImplementedError("hiperparámetros con validación temporal")
+    """Elige cada rejilla por RMSE a un paso, antes del primer origen."""
+    X, z = filas_completas(serie.iloc[:-N_PRUEBA])
+    validacion = TimeSeriesSplit(n_splits=5, test_size=6)
+    for numero, (entrena, valida) in enumerate(validacion.split(X), start=1):
+        print(f"  Pliegue {numero}: {len(entrena)} filas de entrenamiento hasta "
+              f"{X.index[entrena[-1]]:%Y-%m}, valida de "
+              f"{X.index[valida[0]]:%Y-%m} a {X.index[valida[-1]]:%Y-%m}.")
+    elegidos = {}
+    for nombre, (fabrica, rejilla) in REJILLAS.items():
+        estimador = fabrica()
+        if hasattr(estimador, "steps"):
+            paso = estimador.steps[-1][0]
+            rejilla = {f"{paso}__{clave}": valores for clave, valores in rejilla.items()}
+        busqueda = GridSearchCV(
+            estimador, rejilla, cv=validacion, scoring="neg_root_mean_squared_error",
+            n_jobs=1, refit=False, error_score="raise",
+        )
+        busqueda.fit(X, z)
+        elegidos[nombre] = sin_prefijo(busqueda.best_params_)
+        print(f"  {nombre}: {elegidos[nombre]}, RMSE de validación {-busqueda.best_score_:.2f}")
+    return elegidos
 
 
 def graficar_importancia(serie, elegidos):
-    """TODO: importancia de las variables de Random Forest y XGBoost
-    (feature_importances_), ajustados con lo elegido; guarde
-    figuras/importancia.png."""
-    raise NotImplementedError("importancia de variables")
+    """Muestra la importancia de ambos ensambles en el tramo previo al backtest."""
+    X, z = filas_completas(serie.iloc[:-N_PRUEBA])
+    figura, ejes = plt.subplots(1, 2, figsize=(10, 5), sharex=True, layout="constrained")
+    for eje, nombre, color in zip(ejes, ("Random Forest", "XGBoost"), ("#2878A0", "#C27735")):
+        fabrica, _ = REJILLAS[nombre]
+        ajuste = fabrica(**elegidos[nombre]).fit(X, z)
+        importancia = pd.Series(ajuste.feature_importances_, index=X.columns).sort_values()
+        eje.barh(importancia.index, importancia, color=color)
+        eje.set_title(nombre)
+        eje.set_xlabel("Importancia relativa (suma 1)")
+        print(f"  Importancia {nombre}: {importancia.nlargest(4).round(4).to_dict()}")
+    figura.savefig(FIGURAS / "importancia.png", dpi=140)
+    plt.close(figura)
 
 
 # ============================================================
