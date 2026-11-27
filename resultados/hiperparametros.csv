@@ -1,0 +1,5 @@
+modelo,combinaciones,elegido,RMSE validación
+KNN,8,"{'n_neighbors': 20, 'weights': 'uniform'}",18622.0
+SVR,16,"{'C': 3.0, 'epsilon': 0.01}",18158.0
+Random Forest,9,"{'max_depth': 6, 'min_samples_leaf': 1}",18295.0
+XGBoost,12,"{'learning_rate': 0.03, 'max_depth': 3}",17862.0
