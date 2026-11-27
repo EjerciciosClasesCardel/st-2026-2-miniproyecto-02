@@ -150,7 +150,7 @@ def graficar_serie(serie):
 # ============================================================
 # Lo que aprende cada modelo: "nivel" es la serie tal cual; "dif12" es la
 # diferencia con el mismo mes del año anterior.
-OBJETIVO = "nivel"     # TODO: elija "nivel" o "dif12" y justifíquelo
+OBJETIVO = "nivel"
 REZAGOS = 12
 
 
@@ -164,22 +164,28 @@ def a_nivel(y, z):
 
 
 def tabla_supervisada(z):
-    """TODO: una fila por mes con los rezagos 1 a REZAGOS, al menos el mes del
-    año y al menos una estadística de ventana móvil.
-
-    Ninguna columna de la fila t puede usar z(t): los rezagos con shift(k) y
-    las ventanas sobre la serie ya corrida un mes.
-    """
-    raise NotImplementedError("tabla supervisada")
+    """Arma una fila con los doce rezagos, el mes y la media de tres meses previos."""
+    X = pd.DataFrame({f"rezago_{k}": z.shift(k) for k in range(1, REZAGOS + 1)})
+    X["mes"] = z.index.month
+    X["media_3"] = z.shift(1).rolling(3).mean()
+    return X
 
 
 def comprobar_sin_fuga(serie):
-    """TODO: pruebe en el código que ninguna fila ve el mes que predice.
-
-    Por ejemplo, cambie el valor de cada mes y verifique que su fila de la
-    tabla no cambie. Si una fila cambia, lance AssertionError.
-    """
-    raise NotImplementedError("prueba de que no hay fuga")
+    """Comprueba cada fila alterando el valor que predice y todo su futuro."""
+    original = tabla_supervisada(objetivo(serie))
+    for i, mes in enumerate(serie.index):
+        alterada = serie.copy()
+        alterada.iloc[i:] += 1_000_000
+        nueva = tabla_supervisada(objetivo(alterada))
+        pd.testing.assert_series_equal(
+            original.loc[mes], nueva.loc[mes], check_exact=True,
+            obj=f"fila de predictores para {mes:%Y-%m}",
+        )
+    X, _ = filas_completas(serie)
+    print(f"  Prueba de fuga: {len(original)} filas invariantes al cambiar su mes y el futuro.")
+    print(f"  Tabla: {len(X)} filas completas, {X.shape[1]} predictores, "
+          f"primera fila {X.index[0]:%Y-%m}. Objetivo: {OBJETIVO}.")
 
 
 def filas_completas(y):
@@ -190,14 +196,15 @@ def filas_completas(y):
 
 
 def recursivo(ajustado, y, h):
-    """TODO: pronóstico recursivo a h meses.
-
-    Agregue el mes siguiente a y como NaN, arme la última fila de la tabla,
-    pronostique con ajustado.predict, devuelva el pronóstico al nivel con
-    a_nivel y escríbalo como si fuera dato antes de pasar al mes siguiente.
-    Devuelva los h pronósticos.
-    """
-    raise NotImplementedError("pronóstico recursivo")
+    """Agrega a la historia cada pronóstico antes de calcular el siguiente."""
+    fechas = fechas_siguientes(y, h)
+    historia = y.copy()
+    for mes in fechas:
+        historia.loc[mes] = np.nan
+        X = tabla_supervisada(objetivo(historia)).iloc[[-1]]
+        prediccion = ajustado.predict(X)[0]
+        historia.loc[mes] = a_nivel(historia.iloc[:-1], prediccion)
+    return historia.loc[fechas].to_numpy()
 
 
 def con_tabla(fabrica):
