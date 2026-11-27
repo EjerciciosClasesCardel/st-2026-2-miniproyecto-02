@@ -22,6 +22,15 @@ traen el CSV con su ficha en `datos/README.md`, la función `preparar` y la
 función del mejor modelo de su tabla, que vuelve a pasar por el *backtest*
 como fila de referencia.
 
+## Punto de partida: el miniproyecto 1
+
+Esta entrega parte del resultado del miniproyecto 1. Allí, el mejor modelo
+para la lluvia mensual de El Topacio fue el SARIMAX(0,0,0)(0,1,1)₁₂ con la
+exógena `dias_mes`, con un MAPE cercano al 54 %. A partir de ese resultado
+se estructura este miniproyecto: el SARIMAX es la referencia, y la tabla
+supervisada, los cuatro modelos de aprendizaje automático y las tres redes
+se evalúan contra él en el mismo *backtest*.
+
 ## Integrantes
 
 Los grupos son de hasta 3 integrantes; también se puede trabajar de forma individual.

@@ -30,7 +30,7 @@ $$z_t = y_t - y_{t-12}, \qquad \hat y_t = y_{t-12} + \hat z_t.$$
 
 Lo escogimos frente a la otra opción de la plantilla, aprender la lluvia directa (`OBJETIVO = "nivel"`), por dos razones:
 - **Quita el ciclo anual.** La prueba ADF del Miniproyecto 1 dice que la serie original no es estacionaria ($p = 0.2092$) y que la diferencia sí lo es ($p = 0.0033$).
-- **Funciona mejor con las redes y en los meses secos.** Con `nivel` los árboles mejoran, porque la lluvia no tiene tendencia y el techo de lo ya visto casi no les estorba. Pero las redes empeoran y todos los modelos se van a un MAPE de `66` a `93 %`. La comparación completa está en la sección 5.
+- **Funciona mejor con las redes y en los meses secos.** Con `nivel` los árboles mejoran, porque la lluvia no tiene tendencia y el techo de lo ya visto no compromete. Pero las redes empeoran y todos los modelos se van a un MAPE de `66` a `93 %`. La comparación completa está en la sección 5.
 
 **Las columnas.** La función `tabla_supervisada` arma **`14` columnas**, todas con datos anteriores al mes que se pronostica:
 
