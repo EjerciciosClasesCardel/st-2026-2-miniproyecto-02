@@ -371,11 +371,17 @@ class MLP(nn.Module):
 
 class LSTM(nn.Module):
     """TODO: nn.LSTM de una capa sobre la secuencia (lote, 12, 1) y una capa
-    lineal que lee el último estado oculto."""
+    lineal que lee el último estado oculto.
+    Una capa recurrente y una salida lineal sobre el último estado."""
 
-    def __init__(self, ocultas=16):
+    def __init__(self, entradas, ocultas=32):
         super().__init__()
-        raise NotImplementedError("LSTM")
+        self.recurrente = nn.LSTM(entradas, ocultas, batch_first=True)
+        self.salida = nn.Linear(ocultas, 1)
+
+    def forward(self, x):
+        estados, _ = self.recurrente(x)
+        return self.salida(estados[:, -1, :])
 
 
 # TODO: la tercera red, a elección: Conv1D, un híbrido (el clásico más una
@@ -383,27 +389,83 @@ class LSTM(nn.Module):
 # Transformer reciben la secuencia como la LSTM y entran en CANDIDATAS. Un
 # híbrido no pasa por con_tabla: escriba su propia función
 # modelo(entrenamiento, h) y agregue su fila en main.
+class Transformer(nn.Module):
+    """La arquitectura del taller 5, con posiciones sinusoidales fijas."""
+
+    def __init__(self, entradas):
+        super().__init__()
+        dimension = 16
+        self.entrada = nn.Linear(entradas, dimension)
+        pasos = torch.arange(REZAGOS, dtype=torch.float32).unsqueeze(1)
+        frecuencias = torch.exp(
+            torch.arange(0, dimension, 2, dtype=torch.float32)
+            * (-math.log(10_000.0) / dimension)
+        )
+        angulos = pasos * frecuencias
+        posicion = torch.empty(REZAGOS, dimension)
+        posicion[:, 0::2] = angulos.sin()
+        posicion[:, 1::2] = angulos.cos()
+        self.register_buffer("posicion", posicion)
+        self.bloque = nn.TransformerEncoderLayer(
+            dimension, nhead=2, dim_feedforward=32, dropout=0, batch_first=True,
+        )
+        self.salida = nn.Linear(dimension, 1)
+
+    def forward(self, x):
+        estados = self.bloque(self.entrada(x) + self.posicion)
+        return self.salida(estados[:, -1, :])
 
 
 # Las candidatas: nombre, cómo se construye y si recibe la secuencia.
 # TODO: agregue la LSTM, con secuencia=True, y la tercera red.
 CANDIDATAS = {
-    "MLP (8 ocultas)": (lambda n: MLP(n, 8), False),
+    "MLP (16 ocultas)": (lambda n: MLP(n, 16), False),
     "MLP (32 ocultas)": (lambda n: MLP(n, 32), False),
+    "LSTM (32 ocultas)": (LSTM, True),
+    "Transformer": (Transformer, True),
 }
+CANDIDATAS_MLP = ("MLP (16 ocultas)", "MLP (32 ocultas)")
+N_VALIDACION_RED = 12
+
 
 
 def validar_redes(serie):
-    """TODO: elija las épocas de cada red con validación temporal.
+    """Fija las épocas de cada arquitectura y el ancho del MLP antes del backtest."""
+    X, z = filas_completas(serie.iloc[:-N_PRUEBA])
+    X_ent, X_val = X.iloc[:-N_VALIDACION_RED], X.iloc[-N_VALIDACION_RED:]
+    z_ent, z_val = z.loc[X_ent.index], z.loc[X_val.index]
+    print(f"  Redes: {len(X_ent)} filas de entrenamiento hasta {X_ent.index[-1]:%Y-%m}; "
+          f"validación de {X_val.index[0]:%Y-%m} a {X_val.index[-1]:%Y-%m} "
+          f"({len(X_val)} filas).")
+    figura, ejes = plt.subplots(2, 2, figsize=(10, 6.5), sharex=True, layout="constrained")
+    figura.suptitle("Pérdida de entrenamiento y validación temporal")
+    epocas, minimos = {}, {}
+    for eje, (nombre, (construir, secuencia)) in zip(ejes.flat, CANDIDATAS.items()):
+        ajustada = Red(construir, secuencia).fit(X_ent, z_ent, X_val, z_val)
+        curva = np.array(ajustada.perdidas)
+        mejor = int(np.argmin(curva[:, 1]))
+        epocas[nombre], minimos[nombre] = mejor + 1, curva[mejor, 1]
+        print(f"  {nombre}: {contar_parametros(ajustada)} parámetros, época {mejor + 1}, "
+              f"MSE mínimo de validación {curva[mejor, 1]:.4f}, "
+              f"entrenamiento en esa época {curva[mejor, 0]:.4f}; "
+              f"en época {EPOCAS_MAXIMAS}, entrenamiento {curva[-1, 0]:.4f}, "
+              f"validación {curva[-1, 1]:.4f}.")
+        pasos = np.arange(1, len(curva) + 1)
+        eje.plot(pasos, curva[:, 0], label="Entrenamiento", color="#2878A0")
+        eje.plot(pasos, curva[:, 1], label="Validación", color="#C27735")
+        eje.axvline(mejor + 1, linestyle="--", color="gray", label=f"Mínimo: {mejor + 1}")
+        eje.set_title(nombre)
+        eje.set_yscale("log")
+        eje.legend(fontsize=8)
+    figura.supxlabel("Época")
+    figura.supylabel("MSE estandarizado (escala logarítmica)")
+    figura.savefig(FIGURAS / "perdida.png", dpi=140)
+    plt.close(figura)
 
-    Arme la tabla con serie.iloc[:-N_PRUEBA] y deje sus últimos 12 meses de
-    validación. Entrene cada candidata con Red(...).fit(X_ent, z_ent, X_val,
-    z_val): red.perdidas guarda por época la pérdida de entrenamiento y la de
-    validación. Grafique las curvas en figuras/perdida.png, quédese con el
-    MLP de menor pérdida de validación y devuelva {nombre: épocas}, con las
-    épocas de menor pérdida de validación de cada red.
-    """
-    raise NotImplementedError("validación de las redes")
+    mlp = min(CANDIDATAS_MLP, key=minimos.__getitem__)
+    print(f"  MLP elegido: {mlp}.")
+    return {nombre: e for nombre, e in epocas.items() if nombre == mlp or nombre not in CANDIDATAS_MLP}
+
 
 
 def red(nombre, epocas, semilla=SEMILLA):
@@ -413,12 +475,17 @@ def red(nombre, epocas, semilla=SEMILLA):
 
 
 def repetir_con_semillas(serie, nombre, epocas):
-    """TODO: la mejor red con cinco semillas, cada una por el backtest.
-
-    Use con_tabla(red(nombre, epocas, semilla)). Guarde resultados/semillas.csv
-    con una fila por semilla e imprima la media y la desviación del RMSE.
-    """
-    raise NotImplementedError("cinco semillas")
+    """Repite el backtest con la arquitectura y las épocas ya fijadas."""
+    print(f"  Sensibilidad a la semilla: {nombre}, {epocas} épocas.")
+    filas = []
+    for semilla in range(SEMILLA, SEMILLA + 5):
+        _, promedio = backtest(serie, con_tabla(red(nombre, epocas, semilla)))
+        filas.append({"semilla": semilla, **promedio.to_dict()})
+    tabla = pd.DataFrame(filas)
+    tabla.round(2).to_csv(RESULTADOS / "semillas.csv", index=False)
+    print(tabla.round(2).to_string(index=False))
+    print(f"  RMSE medio {tabla['RMSE'].mean():.2f}; "
+          f"desviación estándar muestral {tabla['RMSE'].std(ddof=1):.2f}.")
 
 
 # ============================================================
