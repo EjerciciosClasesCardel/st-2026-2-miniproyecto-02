@@ -1,2 +1,3 @@
 modelo,RMSE,MAE,MAPE,parametros,segundos
-estacional ingenuo,53.33,51.46,11.47,0,0.0
+SARIMAX con festivos,4131.62,3466.69,3.33,5,20.8
+estacional ingenuo,6833.25,5770.06,5.56,0,0.0
