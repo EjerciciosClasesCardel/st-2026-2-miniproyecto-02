@@ -3,25 +3,6 @@
 Pronóstico de Series Temporales con IA · Universidad Autónoma de Occidente,
 2026-II · Carlos Andrés Delgado Saavedra
 
-El grupo vuelve a su serie y a su mejor modelo clásico, el del miniproyecto
-1, y lo enfrenta con la serie convertida en tabla supervisada, cuatro
-modelos de aprendizaje automático (KNN, SVR, Random Forest y XGBoost) y tres
-redes neuronales en PyTorch. Todos pasan por el mismo *backtest* y terminan
-en una sola tabla. El enunciado completo, con la rúbrica, está publicado en
-el campus. Este repositorio es el punto de partida del grupo.
-
-## El enfoque
-
-Como en el miniproyecto 1, se evalúa el análisis y no el número más bajo. Una
-red que pierde con el SARIMA, explicada con un dato de la serie, cumple la
-parte. Se evalúa que el grupo use las herramientas del curso sobre sus datos,
-tome decisiones y las sostenga con sus cifras.
-
-La serie y los grupos son los del miniproyecto 1. Del miniproyecto 1 se
-traen el CSV con su ficha en `datos/README.md`, la función `preparar` y la
-función del mejor modelo de su tabla, que vuelve a pasar por el *backtest*
-como fila de referencia.
-
 ## Punto de partida: el miniproyecto 1
 
 Esta entrega parte del resultado del miniproyecto 1. Allí, el mejor modelo
@@ -30,6 +11,9 @@ exógena `dias_mes`, con un MAPE cercano al 54 %. A partir de ese resultado
 se estructura este miniproyecto: el SARIMAX es la referencia, y la tabla
 supervisada, los cuatro modelos de aprendizaje automático y las tres redes
 se evalúan contra él en el mismo *backtest*.
+
+Del miniproyecto 1 se reutilizan la serie (`datos/`, con su ficha en
+`datos/README.md`), la función `preparar` y la función del SARIMAX.
 
 ## Integrantes
 
