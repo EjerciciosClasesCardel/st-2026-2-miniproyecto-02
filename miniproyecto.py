@@ -4,11 +4,10 @@ Se corre de principio a fin con
 
     python miniproyecto.py
 
-y deja las figuras en figuras/ y las tablas en resultados/. Las partes
-marcadas con TODO las completa el grupo; mientras falten, el guion las
-reporta como pendientes y sigue. El informe, docs/informe.md, cita las cifras
-y las figuras que produce este guion.
+y deja las figuras en figuras/ y las tablas en resultados/. El informe,
+docs/informe.md, cita las cifras y las figuras de una ejecución en CPU.
 """
+import math
 import time
 import warnings
 
@@ -25,13 +24,12 @@ from sklearn.neighbors import KNeighborsRegressor  # noqa: E402
 from sklearn.pipeline import make_pipeline  # noqa: E402
 from sklearn.preprocessing import StandardScaler  # noqa: E402
 from sklearn.svm import SVR  # noqa: E402
-from statsmodels.tsa.statespace.sarimax import SARIMAX  # noqa: E402
+from statsmodels.tsa.arima.model import ARIMA  # noqa: E402
 from torch import nn  # noqa: E402
 from xgboost import XGBRegressor  # noqa: E402
 
 from comun import (RAIZ, backtest, cargar_serie, estacional_ingenuo,  # noqa: E402
                    fechas_siguientes, rmse)
-
 # Después de importar statsmodels, que al cargarse fija sus propios avisos.
 warnings.filterwarnings("ignore")
 torch.set_num_threads(1)
@@ -42,6 +40,7 @@ RESULTADOS.mkdir(exist_ok=True)
 
 SEMILLA = 2026
 N_PRUEBA = 24          # los meses del backtest, los mismos de comun.backtest
+HORIZONTE = 12
 
 # El último modelo que ajustó cada función modelo(entrenamiento, h). Sirve
 # para contar sus parámetros después del backtest.
@@ -50,44 +49,97 @@ ULTIMO = {}
 # ============================================================
 # 1. La serie y el modelo a superar
 # ============================================================
-# TODO: los mismos datos del miniproyecto 1: copie la serie a datos/ con su
-# ficha en datos/README.md y cambie estos cuatro datos. La serie de ejemplo
-# solo sirve para probar que el guion corre.
-ARCHIVO = "datos/air_passengers.csv"
-FECHA = "Month"
-VALOR = "#Passengers"
+ARCHIVO = "datos/trafico_vehicular_peaje_siberia.csv"
+CALENDARIO = "datos/festivos_colombia.csv"
+FECHA = "mes"
+VALOR = "total"
 PERIODO = 12
+ESCALA = 10_000
+ORDEN = (0, 1, 1)
+ORDEN_ESTACIONAL = (1, 0, 1, PERIODO)
+NOMBRE_CLASICO = "SARIMAX con festivos"
 
 
 def preparar(serie):
     """TODO: la misma preparación del miniproyecto 1 (huecos y datos atípicos).
 
-    Debe devolver una serie sin NaN.
+    Valida los huecos y conserva los valores originales de la serie.
+
+    Rechaza series vacías o con NaN para exigir una decisión explícita.
+    El criterio 1,5 × IQR se usa como diagnóstico, sin recorte automático.
     """
+    if serie.empty:
+        raise ValueError("La serie está vacía.")
+    if serie.isna().any():
+        raise ValueError(
+            "La serie tiene meses faltantes. Revise los datos y documente "
+            "cómo tratarlos antes de continuar."
+        )
+
+    q1, q3 = serie.quantile([0.25, 0.75])
+    iqr = q3 - q1
+    limite_inferior = q1 - 1.5 * iqr
+    limite_superior = q3 + 1.5 * iqr
+    atipicos = serie[(serie < limite_inferior) | (serie > limite_superior)]
+    print(
+        f"Diagnóstico IQR: Q1={q1:.2f}; Q3={q3:.2f}; IQR={iqr:.2f}; "
+        f"límites=[{limite_inferior:.2f}, {limite_superior:.2f}]."
+    )
+    print(f"Rango observado: [{serie.min():.2f}, {serie.max():.2f}].")
+    print(
+        f"Atípicos según 1,5 × IQR: {len(atipicos)}; "
+        "se conservan los valores originales."
+    )
     return serie
+
 
 
 def modelo_clasico(serie):
     """TODO: devuelva la función modelo(entrenamiento, h) del mejor modelo del
     miniproyecto 1, con los mismos órdenes y la misma transformación.
 
-    Copie aquí lo que esa función necesite, como sus variables exógenas.
-    Dentro de modelo, guarde el ajuste en ULTIMO["modelo"] para que la tabla
-    cuente sus parámetros.
-    """
-    raise NotImplementedError("el mejor modelo del miniproyecto 1")
+    Reajusta el SARIMAX del miniproyecto 1 con el calendario de cada origen."""
+    fechas = serie.index.append(fechas_siguientes(serie, HORIZONTE))
+    x = cargar_serie(CALENDARIO, FECHA, "festivos").to_frame().reindex(fechas)
+    if not np.isfinite(x.to_numpy()).all():
+        raise ValueError("El calendario de festivos no cubre los meses requeridos.")
+    max_iteraciones = 200
 
+    def pronosticar(entrenamiento, h):
+        origen = entrenamiento.index[-1]
+        exog_entrenamiento = x.loc[entrenamiento.index]
+        exog_futuras = x.loc[fechas_siguientes(entrenamiento, h)]
+        ajuste = ARIMA(
+            entrenamiento / ESCALA,
+            order=ORDEN,
+            seasonal_order=ORDEN_ESTACIONAL,
+            exog=exog_entrenamiento,
+        ).fit(
+            method="statespace",
+            method_kwargs={"method": "lbfgs", "maxiter": max_iteraciones},
+        )
+        if not ajuste.mle_retvals.get("converged", False):
+            raise RuntimeError(
+                f"SARIMAX no convergió en el origen {origen:%Y-%m} "
+                f"con un límite de {max_iteraciones} iteraciones."
+            )
+        pronostico = ajuste.forecast(steps=h, exog=exog_futuras).to_numpy() * ESCALA
+        if not np.isfinite(pronostico).all():
+            raise ValueError(f"SARIMAX produjo pronósticos no finitos en {origen:%Y-%m}.")
+        ULTIMO["modelo"] = ajuste
+        return pronostico
 
-# TODO: el nombre del modelo, con sus órdenes, como aparece en la tabla.
-NOMBRE_CLASICO = "SARIMA del miniproyecto 1"
+    return pronosticar
+
 
 
 def graficar_serie(serie):
     figura, eje = plt.subplots(figsize=(9, 3.4))
     eje.plot(serie.index, serie.to_numpy())
     eje.axvline(serie.index[-N_PRUEBA], color="gray", linestyle="--")
-    eje.set_title(f"{VALOR}: serie mensual; a la derecha de la línea, los meses del backtest")
-    eje.set_ylabel(VALOR)
+    eje.set_title("Tráfico mensual por el peaje Siberia")
+    eje.set_ylabel("Vehículos")
+    eje.text(0.02, 0.95, "Categorías III a VII", transform=eje.transAxes, va="top")
     figura.tight_layout()
     figura.savefig(FIGURAS / "serie.png", dpi=120)
     plt.close(figura)
